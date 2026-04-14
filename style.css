@@ -359,6 +359,30 @@ header {
 .img-ocr-empty  { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--dim); font-style: italic; }
 .img-ocr-scan   { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); animation: pulse 1.4s ease-in-out infinite; }
 
+.img-answer-pill {
+  margin-top: 8px;
+  border: 1px solid var(--border2);
+  background: rgba(255,255,255,.03);
+  border-radius: 4px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.img-answer-k {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.img-answer-v {
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
 mark { background: rgba(255,255,255,.18); color: var(--text); padding: 0 2px; font-weight: 600; border-radius: 2px; }
 
 /* ── Column name prompt ──────────────────────────────────── */

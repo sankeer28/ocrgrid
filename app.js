@@ -516,7 +516,53 @@ function imgCardHTML(row) {
     ocrEl = `<span class="img-ocr-empty">no text found</span>`;
   }
 
-  return `${imgWrap}<div class="img-ocr">${ocrEl}</div>`;
+  const answerEl = pending ? '' : buildAnswerSummaryHTML(row.ocr_text || '');
+  return `${imgWrap}<div class="img-ocr">${ocrEl}${answerEl}</div>`;
+}
+
+function buildAnswerSummaryHTML(ocrText) {
+  const parsed = parseSelectedOption(ocrText);
+  if (!parsed?.selectedText) return '';
+  const label = parsed.optionIndex > -1 ? String.fromCharCode(65 + parsed.optionIndex) : '?';
+  return `<div class="img-answer-pill"><span class="img-answer-k">selected</span><span class="img-answer-v">${esc(label)}. ${esc(parsed.selectedText)}</span></div>`;
+}
+
+function parseSelectedOption(text) {
+  const src = (text || '').replace(/\r/g, ' ').replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!src) return null;
+
+  // Includes OCR variants where empty circles are misread as (D)/(d).
+  const markerRx = /(\(o\)|\(O\)|\(\*\)|[@®]|[●◉]|\(D\)?|\(d\)?|\(\s*\)|[○◯]|\bO\b)/g;
+  const selectedMarkers = new Set(['(o)', '(O)', '(*)', '@', '®', '●', '◉']);
+  const marks = [...src.matchAll(markerRx)];
+  if (!marks.length) return null;
+
+  const options = [];
+  for (let i = 0; i < marks.length; i++) {
+    const marker = marks[i][0];
+    const normalizedMarker = marker.replace(/\s+/g, '');
+    const start = marks[i].index + marker.length;
+    const end = i + 1 < marks.length ? marks[i + 1].index : src.length;
+    let optionText = src.slice(start, end).trim();
+    optionText = optionText.replace(/^[\-:.)\s]+/, '').trim();
+    if (!optionText || optionText.length < 2) continue;
+
+    options.push({
+      marker,
+      text: optionText,
+      selected: selectedMarkers.has(normalizedMarker),
+    });
+  }
+
+  if (!options.length) return null;
+  const selected = options.find(o => o.selected);
+  if (!selected) return null;
+
+  return {
+    selectedText: selected.text,
+    optionIndex: options.indexOf(selected),
+    options,
+  };
 }
 
 // ════════════════════════════════════════════════════════════
@@ -526,7 +572,12 @@ function openLightbox(imgId) {
   const row = S.images.get(imgId);
   if (!row || row._pending) return;
   $('lb-img').src  = row.image_data || '';
-  $('lb-text').textContent = row.ocr_text || '(no text found)';
+  const parsed = parseSelectedOption(row.ocr_text || '');
+  if (parsed?.selectedText) {
+    $('lb-text').textContent = `[detected answer] ${parsed.selectedText}\n\n${row.ocr_text || '(no text found)'}`;
+  } else {
+    $('lb-text').textContent = row.ocr_text || '(no text found)';
+  }
   $('lightbox').classList.remove('hidden');
 }
 function closeLightbox() {
