@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// OCRGRID — app.js  (Supabase + Tesseract.js)
+// OCRGRID — app.js  (Supabase + Scribe.js OCR + Tesseract fallback)
 // ═══════════════════════════════════════════════════════════════
 
 const S = {
@@ -10,6 +10,8 @@ const S = {
   activeColId:   null,
   query:         '',
   searchOpen:    false,
+  ocrEngine:     null,
+  scribe:        null,
   ocrWorker:     null,
   ocrReady:      false,
   imgChannel:    null,
@@ -18,6 +20,11 @@ const S = {
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 const $  = id => document.getElementById(id);
+const OCR_LANG = 'eng';
+const OCR_TESS_LANG_PATH = 'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_best';
+const OCR_TESS_ENGINE = (window.Tesseract?.OEM && Number.isInteger(Tesseract.OEM.LSTM_ONLY))
+  ? Tesseract.OEM.LSTM_ONLY
+  : 1;
 
 // ════════════════════════════════════════════════════════════
 // BOOT
@@ -40,16 +47,35 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ════════════════════════════════════════════════════════════
-// OCR (Tesseract.js — local)
+// OCR (Scribe.js primary, Tesseract fallback)
 // ════════════════════════════════════════════════════════════
 async function initOCR() {
   try {
-    S.ocrWorker = await Tesseract.createWorker('eng', 1, { logger: () => {} });
+    // Scribe.js must be loaded from same origin. Using local node_modules path.
+    const scribeMod = await import('./node_modules/scribe.js-ocr/scribe.js');
+    S.scribe = scribeMod.default || scribeMod;
+    S.ocrEngine = 'scribe';
+    S.ocrReady = true;
+    console.info('[OCR] Using Scribe.js');
+    return;
+  } catch (scribeErr) {
+    console.warn('[OCR] Scribe.js unavailable; falling back to Tesseract.js', scribeErr);
+  }
+
+  try {
+    S.ocrWorker = await Tesseract.createWorker(OCR_LANG, OCR_TESS_ENGINE, {
+      logger: () => {},
+      langPath: OCR_TESS_LANG_PATH,
+    });
+    S.ocrEngine = 'tesseract';
     S.ocrReady  = true;
-  } catch (e) { console.error('[OCR]', e); }
+    console.info('[OCR] Using Tesseract.js fallback');
+  } catch (e) {
+    console.error('[OCR]', e);
+  }
 }
 
-async function runOCR(dataUrl) {
+async function runOCR(sourceFile, dataUrl) {
   if (!S.ocrReady) {
     await new Promise((res, rej) => {
       let t = 0;
@@ -59,8 +85,40 @@ async function runOCR(dataUrl) {
       }, 100);
     });
   }
+
+  if (S.ocrEngine === 'scribe' && S.scribe?.extractText) {
+    try {
+      // Scribe expects File/Blob/path-like inputs, not data URLs.
+      const raw = await S.scribe.extractText([sourceFile]);
+      const txt = normalizeScribeText(raw);
+      if (txt) return txt;
+      console.warn('[OCR] Scribe returned empty text, trying Tesseract fallback');
+    } catch (e) {
+      console.warn('[OCR] Scribe failed, trying Tesseract fallback', e);
+    }
+  }
+
+  if (!S.ocrWorker) {
+    throw new Error('Tesseract fallback is not ready');
+  }
   const { data: { text } } = await S.ocrWorker.recognize(dataUrl);
   return text.trim();
+}
+
+function normalizeScribeText(raw) {
+  if (typeof raw === 'string') return raw.trim();
+  if (Array.isArray(raw)) {
+    const texts = raw
+      .map(item => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item.text === 'string') return item.text;
+        return '';
+      })
+      .filter(Boolean);
+    return texts.join('\n').trim();
+  }
+  if (raw && typeof raw.text === 'string') return raw.text.trim();
+  return '';
 }
 
 // ════════════════════════════════════════════════════════════
@@ -353,7 +411,7 @@ async function processFile(file) {
 
   try {
     const imageData = await toBase64(file);
-    const ocrText   = await runOCR(imageData).catch(() => '');
+    const ocrText   = await runOCR(file, imageData).catch(() => '');
     URL.revokeObjectURL(preview);
 
     const { error } = await sb.from('images').insert({
