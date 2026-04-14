@@ -291,6 +291,10 @@ header {
 .img-card.in { opacity: 1; transform: translateY(0); }
 .img-card.search-miss { opacity: .15; }
 .img-card.search-hit  { outline: 2px solid var(--accent); outline-offset: -2px; }
+.img-card.search-hit-active {
+  outline: 2px solid #F59E0B;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, .25) inset;
+}
 
 /* Image wrapper */
 .img-wrap {

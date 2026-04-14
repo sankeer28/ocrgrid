@@ -10,6 +10,7 @@ const S = {
   activeColId:   null,
   query:         '',
   searchOpen:    false,
+  searchFocusId: null,
   ocrEngine:     null,
   scribe:        null,
   ocrWorker:     null,
@@ -544,6 +545,7 @@ function openSearch() {
 }
 function closeSearch() {
   S.searchOpen = false; S.query = '';
+  S.searchFocusId = null;
   $('search-bar').classList.remove('open');
   $('search-input').value = '';
   $('search-count').textContent = '';
@@ -553,25 +555,61 @@ function closeSearch() {
 function applySearch() {
   if (!S.query) { clearSearchStates(); $('search-count').textContent = ''; return; }
   const q = S.query.toLowerCase();
-  let hits = 0;
+  const exactHits = [];
+  const fuzzyHits = [];
   const colHits = new Set();
 
   document.querySelectorAll('.img-card').forEach(card => {
     const row = S.images.get(card.dataset.id);
-    if (!row || row._pending) { card.classList.remove('search-hit', 'search-miss'); return; }
-    const match = row.ocr_text?.toLowerCase().includes(q);
-    card.classList.toggle('search-hit',  !!match);
-    card.classList.toggle('search-miss', !match);
-    if (match) { hits++; colHits.add(card.dataset.colId); applySearchToCard(card, row, q); }
-    else restoreOCREl(card, row);
+    if (!row || row._pending) {
+      card.classList.remove('search-hit', 'search-miss', 'search-hit-active');
+      return;
+    }
+
+    const text = row.ocr_text || '';
+    const lower = text.toLowerCase();
+    const exact = lower.includes(q);
+
+    if (exact) {
+      exactHits.push({ card, row, score: 1 });
+      colHits.add(card.dataset.colId);
+      card.classList.add('search-hit');
+      card.classList.remove('search-miss');
+      applySearchToCard(card, row, q);
+      return;
+    }
+
+    const score = fuzzyScore(q, lower);
+    if (score >= 0.62) {
+      fuzzyHits.push({ card, row, score });
+      colHits.add(card.dataset.colId);
+      card.classList.add('search-hit');
+      card.classList.remove('search-miss');
+      applyFuzzySearchToCard(card, row, q, score);
+    } else {
+      card.classList.remove('search-hit', 'search-hit-active');
+      card.classList.add('search-miss');
+      restoreOCREl(card, row);
+    }
   });
+
+  const usingFuzzy = exactHits.length === 0;
+  const activeHits = usingFuzzy ? fuzzyHits.sort((a, b) => b.score - a.score) : exactHits;
+  setActiveSearchHit(activeHits[0]?.card || null);
+  if (activeHits.length) scrollToSearchHit(activeHits[0].card);
 
   // Dim columns with no hits
   document.querySelectorAll('.col').forEach(col => {
     col.classList.toggle('col-search-miss', !colHits.has(col.dataset.colId));
   });
 
-  $('search-count').textContent = hits ? `${hits} match${hits > 1 ? 'es' : ''}` : 'no matches';
+  if (activeHits.length === 0) {
+    $('search-count').textContent = 'no matches';
+  } else if (usingFuzzy) {
+    $('search-count').textContent = `${activeHits.length} fuzzy match${activeHits.length > 1 ? 'es' : ''}`;
+  } else {
+    $('search-count').textContent = `${activeHits.length} match${activeHits.length > 1 ? 'es' : ''}`;
+  }
 }
 
 function applySearchToCard(card, row, q) {
@@ -593,11 +631,82 @@ function restoreOCREl(card, row) {
 
 function clearSearchStates() {
   document.querySelectorAll('.img-card').forEach(card => {
-    card.classList.remove('search-hit', 'search-miss');
+    card.classList.remove('search-hit', 'search-miss', 'search-hit-active');
     const row = S.images.get(card.dataset.id);
     if (row) restoreOCREl(card, row);
   });
   document.querySelectorAll('.col').forEach(col => col.classList.remove('col-search-miss'));
+}
+
+function applyFuzzySearchToCard(card, row, q, score) {
+  const ocrDiv = card.querySelector('.img-ocr-text');
+  if (!ocrDiv || !row.ocr_text) return;
+  const preview = esc(trunc(row.ocr_text, 180));
+  ocrDiv.innerHTML = `${preview}<br><span class="img-ocr-empty">fuzzy ${(score * 100).toFixed(0)}%</span>`;
+}
+
+function setActiveSearchHit(card) {
+  document.querySelectorAll('.img-card.search-hit-active').forEach(el => el.classList.remove('search-hit-active'));
+  if (!card) {
+    S.searchFocusId = null;
+    return;
+  }
+  card.classList.add('search-hit-active');
+  S.searchFocusId = card.dataset.id;
+}
+
+function scrollToSearchHit(card) {
+  const col = card.closest('.col');
+  if (col) {
+    setActiveCol(col.dataset.colId);
+    col.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }
+  card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+}
+
+function fuzzyScore(q, text) {
+  const query = normalizeSearchText(q);
+  const body = normalizeSearchText(text);
+  if (!query || !body) return 0;
+  if (body.includes(query)) return 1;
+
+  const qTokens = query.split(/\s+/).filter(Boolean);
+  const tTokens = body.split(/\s+/).filter(Boolean);
+  if (!qTokens.length || !tTokens.length) return 0;
+
+  let tokenHits = 0;
+  for (const qt of qTokens) {
+    if (tTokens.some(tt => tt.includes(qt) || qt.includes(tt))) tokenHits++;
+  }
+  const tokenScore = tokenHits / qTokens.length;
+
+  const gramScore = diceCoefficient(bigrams(query), bigrams(body));
+  return Math.max(tokenScore, gramScore);
+}
+
+function normalizeSearchText(v) {
+  return (v || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function bigrams(s) {
+  const out = [];
+  for (let i = 0; i < s.length - 1; i++) out.push(s.slice(i, i + 2));
+  return out;
+}
+
+function diceCoefficient(a, b) {
+  if (!a.length || !b.length) return 0;
+  const counts = new Map();
+  for (const g of a) counts.set(g, (counts.get(g) || 0) + 1);
+  let overlap = 0;
+  for (const g of b) {
+    const n = counts.get(g) || 0;
+    if (n > 0) {
+      overlap++;
+      counts.set(g, n - 1);
+    }
+  }
+  return (2 * overlap) / (a.length + b.length);
 }
 
 // ════════════════════════════════════════════════════════════
