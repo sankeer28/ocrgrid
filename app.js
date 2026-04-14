@@ -146,17 +146,22 @@ async function joinRoom(code) {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'images', filter: `room_code=eq.${code}` },
       ({ new: row }) => {
         if (S.images.has(row.id)) {
-          // Our own pending card — upgrade it with confirmed data
           S.images.set(row.id, row);
           const el = document.querySelector(`.img-card[data-id="${row.id}"]`);
           if (el) finaliseImgCard(el, row);
         } else {
-          // Someone else's image
           S.images.set(row.id, row);
           appendImgCard(row);
         }
         syncColCounts();
         if (S.searchOpen) applySearch();
+      })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'images' },
+      ({ old: row }) => {
+        if (!S.images.has(row.id)) return;
+        S.images.delete(row.id);
+        document.querySelector(`.img-card[data-id="${row.id}"]`)?.remove();
+        syncColCounts();
       })
     .subscribe();
 
@@ -174,6 +179,12 @@ async function joinRoom(code) {
         S.columns.set(col.id, col);
         const nameEl = document.querySelector(`.col[data-col-id="${col.id}"] .col-name`);
         if (nameEl) nameEl.textContent = col.name;
+      })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'columns' },
+      ({ old: col }) => {
+        if (!S.columns.has(col.id)) return;
+        S.columns.delete(col.id);
+        document.querySelector(`.col[data-col-id="${col.id}"]`)?.remove();
       })
     .subscribe();
 }
@@ -242,6 +253,7 @@ function renderColumn(col) {
       <span class="col-name">${esc(col.name)}</span>
       <span class="col-count">0</span>
       <span class="col-focus-badge">click to paste</span>
+      ${col.created_by === S.uid ? '<button class="col-delete" title="Delete column">✕</button>' : ''}
     </div>
     <div class="col-images">
       <div class="col-empty">Click to select,<br>then paste (Ctrl+V)</div>
@@ -259,6 +271,11 @@ function renderColumn(col) {
     startRename(el, col.id);
   });
 
+  // Delete column (owner only)
+  el.querySelector('.col-delete')?.addEventListener('click', e => {
+    e.stopPropagation();
+    deleteColumn(col.id);
+  });
 
   board.insertBefore(el, addBtn);
 }
@@ -322,7 +339,7 @@ async function processFile(file) {
   const colId   = S.activeColId;
 
   // Register as pending BEFORE appending so realtime won't duplicate
-  S.images.set(id, { id, image_data: preview, file_name: file.name, ocr_text: '', column_id: colId, _pending: true });
+  S.images.set(id, { id, image_data: preview, file_name: file.name, ocr_text: '', column_id: colId, uploader_id: S.uid, _pending: true });
   appendImgCard(S.images.get(id));
   syncColCounts();
 
@@ -394,26 +411,33 @@ function appendImgCard(row) {
   list.appendChild(card);
   requestAnimationFrame(() => card.classList.add('in'));
 
-  // Click image → lightbox
-  card.querySelector('.img-wrap').addEventListener('click', () => openLightbox(row.id));
+  bindImgCardEvents(card, row);
   syncColCounts();
 }
 
 function finaliseImgCard(el, row) {
   el.innerHTML = imgCardHTML(row);
   el.classList.add('in');
-  el.querySelector('.img-wrap').addEventListener('click', () => openLightbox(row.id));
+  bindImgCardEvents(el, row);
   if (S.query) applySearchToCard(el, row, S.query.toLowerCase());
+}
+
+function bindImgCardEvents(card, row) {
+  card.querySelector('.img-wrap').addEventListener('click', () => openLightbox(row.id));
+  const delBtn = card.querySelector('.img-delete');
+  if (delBtn) delBtn.addEventListener('click', e => { e.stopPropagation(); deleteImage(row.id); });
 }
 
 function imgCardHTML(row) {
   const pending = !!row._pending;
   const src     = row.image_data || '';
   const name    = esc(trunc(row.file_name || 'image', 32));
+  const isOwner = row.uploader_id === S.uid;
 
   const imgWrap = `<div class="img-wrap${pending ? ' scanning' : ''}">
     <img src="${src}" alt="${name}" loading="lazy">
     ${pending ? '<div class="scan-label">processing</div>' : ''}
+    ${isOwner && !pending ? '<button class="img-delete" title="Delete image">✕</button>' : ''}
   </div>`;
 
   let ocrEl;
@@ -568,6 +592,27 @@ function initColResize(colEl) {
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });
+}
+
+// ════════════════════════════════════════════════════════════
+// DELETE
+// ════════════════════════════════════════════════════════════
+async function deleteImage(id) {
+  const img = S.images.get(id);
+  if (!img || img.uploader_id !== S.uid) return;
+  S.images.delete(id);
+  document.querySelector(`.img-card[data-id="${id}"]`)?.remove();
+  syncColCounts();
+  await sb.from('images').delete().eq('id', id);
+}
+
+async function deleteColumn(id) {
+  const col = S.columns.get(id);
+  if (!col || col.created_by !== S.uid) return;
+  S.columns.delete(id);
+  document.querySelector(`.col[data-col-id="${id}"]`)?.remove();
+  await sb.from('images').delete().eq('column_id', id);
+  await sb.from('columns').delete().eq('id', id);
 }
 
 // ════════════════════════════════════════════════════════════

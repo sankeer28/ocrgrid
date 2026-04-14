@@ -300,6 +300,28 @@ header {
 .img-wrap img { width: 100%; height: auto; display: block; transition: opacity .2s; }
 .img-wrap:hover img { opacity: .9; }
 
+/* Delete button on image card (owner only) */
+.img-delete {
+  position: absolute; top: 6px; right: 6px; z-index: 5;
+  width: 22px; height: 22px; border-radius: 4px;
+  background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.15);
+  color: #fff; font-size: 11px; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s, background .15s;
+}
+.img-wrap:hover .img-delete { opacity: 1; }
+.img-delete:hover { background: var(--warn); border-color: var(--warn); }
+
+/* Delete button on column header (owner only) */
+.col-delete {
+  background: none; border: none; cursor: pointer; flex-shrink: 0;
+  color: var(--dim); font-size: 11px; line-height: 1;
+  padding: 2px 4px; border-radius: 3px;
+  opacity: 0; transition: opacity .15s, color .15s;
+}
+.col-header:hover .col-delete { opacity: 1; }
+.col-delete:hover { color: var(--warn); }
+
 /* Scanning overlay — shimmer effect */
 .img-wrap.scanning img { filter: brightness(.55); }
 .img-wrap.scanning::after {
