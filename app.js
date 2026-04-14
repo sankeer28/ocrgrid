@@ -26,6 +26,11 @@ const OCR_TESS_LANG_PATH = 'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages
 const OCR_TESS_ENGINE = (window.Tesseract?.OEM && Number.isInteger(Tesseract.OEM.LSTM_ONLY))
   ? Tesseract.OEM.LSTM_ONLY
   : 1;
+const OCR_ALLOW_TESSERACT_FALLBACK = false;
+const OCR_SCRIBE_OPTIONS = {
+  mode: 'quality',
+  modeAdv: 'lstm',
+};
 
 // ════════════════════════════════════════════════════════════
 // BOOT
@@ -90,12 +95,16 @@ async function runOCR(sourceFile, dataUrl) {
   if (S.ocrEngine === 'scribe' && S.scribe?.extractText) {
     try {
       // Scribe expects File/Blob/path-like inputs, not data URLs.
-      const raw = await S.scribe.extractText([sourceFile]);
+      const raw = await S.scribe.extractText([sourceFile], [OCR_LANG], 'txt', OCR_SCRIBE_OPTIONS);
       const txt = normalizeScribeText(raw);
       if (txt) return txt;
-      console.warn('[OCR] Scribe returned empty text, trying Tesseract fallback');
+      console.warn('[OCR] Scribe returned empty text');
+      if (!OCR_ALLOW_TESSERACT_FALLBACK) return '';
+      console.warn('[OCR] Falling back to Tesseract (enabled by config)');
     } catch (e) {
-      console.warn('[OCR] Scribe failed, trying Tesseract fallback', e);
+      console.warn('[OCR] Scribe failed', e);
+      if (!OCR_ALLOW_TESSERACT_FALLBACK) return '';
+      console.warn('[OCR] Falling back to Tesseract (enabled by config)');
     }
   }
 
