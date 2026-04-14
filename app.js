@@ -4,7 +4,7 @@
 
 const S = {
   roomCode:      null,
-  uid:           localStorage.getItem('ocrgrid_uid') || uid8(),
+  ip:            null,          // fetched on boot, used for ownership
   columns:       new Map(),   // colId → col row
   images:        new Map(),   // imgId → img row  (also pending)
   activeColId:   null,
@@ -15,7 +15,6 @@ const S = {
   imgChannel:    null,
   colChannel:    null,
 };
-localStorage.setItem('ocrgrid_uid', S.uid);
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 const $  = id => document.getElementById(id);
@@ -23,9 +22,18 @@ const $  = id => document.getElementById(id);
 // ════════════════════════════════════════════════════════════
 // BOOT
 // ════════════════════════════════════════════════════════════
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   initOCR();
   bindEvents();
+  try {
+    const res = await fetch('https://api.ipify.org?format=json');
+    const { ip } = await res.json();
+    S.ip = ip;
+  } catch (e) {
+    // fallback: random stable id stored in localStorage
+    S.ip = localStorage.getItem('ocrgrid_uid') || uid8();
+    localStorage.setItem('ocrgrid_uid', S.ip);
+  }
   const code = new URLSearchParams(location.search).get('room');
   if (code && /^[A-Z0-9]{6}$/i.test(code)) joinRoom(code.toUpperCase());
   else show('landing');
@@ -223,7 +231,7 @@ async function confirmColPrompt() {
   const { data, error } = await sb.from('columns').insert({
     room_code:  S.roomCode,
     name,
-    created_by: S.uid,
+    created_by: S.ip,
     position,
   }).select().single();
   if (!error && data) {
@@ -253,7 +261,7 @@ function renderColumn(col) {
       <span class="col-name">${esc(col.name)}</span>
       <span class="col-count">0</span>
       <span class="col-focus-badge">click to paste</span>
-      ${col.created_by === S.uid ? '<button class="col-delete" title="Delete column">✕</button>' : ''}
+      ${col.created_by === S.ip ? '<button class="col-delete" title="Delete column">✕</button>' : ''}
     </div>
     <div class="col-images">
       <div class="col-empty">Click to select,<br>then paste (Ctrl+V)</div>
@@ -339,7 +347,7 @@ async function processFile(file) {
   const colId   = S.activeColId;
 
   // Register as pending BEFORE appending so realtime won't duplicate
-  S.images.set(id, { id, image_data: preview, file_name: file.name, ocr_text: '', column_id: colId, uploader_id: S.uid, _pending: true });
+  S.images.set(id, { id, image_data: preview, file_name: file.name, ocr_text: '', column_id: colId, uploader_id: S.ip, _pending: true });
   appendImgCard(S.images.get(id));
   syncColCounts();
 
@@ -355,7 +363,7 @@ async function processFile(file) {
       image_data:  imageData,
       file_name:   file.name,
       ocr_text:    ocrText,
-      uploader_id: S.uid,
+      uploader_id: S.ip,
     });
     if (error) throw error;
   } catch (err) {
@@ -432,7 +440,7 @@ function imgCardHTML(row) {
   const pending = !!row._pending;
   const src     = row.image_data || '';
   const name    = esc(trunc(row.file_name || 'image', 32));
-  const isOwner = row.uploader_id === S.uid;
+  const isOwner = row.uploader_id === S.ip;
 
   const imgWrap = `<div class="img-wrap${pending ? ' scanning' : ''}">
     <img src="${src}" alt="${name}" loading="lazy">
@@ -599,20 +607,41 @@ function initColResize(colEl) {
 // ════════════════════════════════════════════════════════════
 async function deleteImage(id) {
   const img = S.images.get(id);
-  if (!img || img.uploader_id !== S.uid) return;
+  if (!img || img.uploader_id !== S.ip) return;
+
+  // Optimistic remove
   S.images.delete(id);
-  document.querySelector(`.img-card[data-id="${id}"]`)?.remove();
+  const cardEl = document.querySelector(`.img-card[data-id="${id}"]`);
+  cardEl?.remove();
   syncColCounts();
-  await sb.from('images').delete().eq('id', id);
+
+  const { error } = await sb.from('images').delete().eq('id', id);
+  if (error) {
+    console.error('[deleteImage]', error);
+    // Revert — re-fetch and re-render
+    const { data } = await sb.from('images').select('*').eq('id', id).single();
+    if (data) { S.images.set(id, data); appendImgCard(data); }
+  }
 }
 
 async function deleteColumn(id) {
   const col = S.columns.get(id);
-  if (!col || col.created_by !== S.uid) return;
+  if (!col || col.created_by !== S.ip) return;
+
+  // Optimistic remove
   S.columns.delete(id);
   document.querySelector(`.col[data-col-id="${id}"]`)?.remove();
-  await sb.from('images').delete().eq('column_id', id);
-  await sb.from('columns').delete().eq('id', id);
+
+  const { error: imgErr } = await sb.from('images').delete().eq('column_id', id);
+  if (imgErr) console.error('[deleteColumn images]', imgErr);
+
+  const { error: colErr } = await sb.from('columns').delete().eq('id', id);
+  if (colErr) {
+    console.error('[deleteColumn]', colErr);
+    // Revert column
+    S.columns.set(id, col);
+    renderColumn(col);
+  }
 }
 
 // ════════════════════════════════════════════════════════════
