@@ -52,8 +52,8 @@ window.addEventListener('DOMContentLoaded', async () => {
 // ════════════════════════════════════════════════════════════
 async function initOCR() {
   try {
-    // Scribe.js must be loaded from same origin. Using local node_modules path.
-    const scribeMod = await import('./node_modules/scribe.js-ocr/scribe.js');
+    // Scribe.js must be loaded from same origin. Use vendored path for local + Vercel.
+    const scribeMod = await import('./vendor/scribe.js-ocr/scribe.js');
     S.scribe = scribeMod.default || scribeMod;
     S.ocrEngine = 'scribe';
     S.ocrReady = true;
