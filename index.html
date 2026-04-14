@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OCRGRID</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+
+<!-- Landing -->
+<div id="landing">
+  <div class="land-box">
+    <div class="land-logo">OCR<span>GRID</span></div>
+    <p class="land-sub">paste images · search text · collaborate</p>
+    <div class="land-actions">
+      <button id="btn-create" class="btn-accent">Create Room</button>
+      <div class="land-or">or join existing</div>
+      <div class="land-join-row">
+        <input id="input-code" type="text" placeholder="XXXXXX" maxlength="6" spellcheck="false" autocomplete="off">
+        <button id="btn-join" class="btn-outline">Join</button>
+      </div>
+    </div>
+    <p class="land-note">OCR runs locally — nothing sent to any server</p>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app" class="hidden">
+
+  <header>
+    <div class="hd-top">
+      <div class="hd-left">
+        <span class="logo">OCR<em>GRID</em></span>
+        <div class="room-pill">
+          <span class="room-pill-label">ROOM</span>
+          <span id="room-code-display"></span>
+        </div>
+        <button id="btn-copy" class="btn-ghost">copy link</button>
+      </div>
+      <div class="hd-right">
+        <span class="kbd-hint">ctrl+f search</span>
+        <label class="btn-accent btn-sm upload-label">
+          + Upload
+          <input id="file-input" type="file" accept="image/*" multiple>
+        </label>
+        <button id="btn-leave" class="btn-ghost">leave</button>
+      </div>
+    </div>
+    <div id="board-hscroll"><div id="board-hscroll-inner"></div></div>
+  </header>
+
+  <!-- Search -->
+  <div id="search-bar">
+    <span class="search-icon">/</span>
+    <input id="search-input" type="search" placeholder="search text in all images…" autocomplete="off" spellcheck="false">
+    <span id="search-count"></span>
+    <button id="btn-search-close">✕</button>
+  </div>
+
+  <!-- Board -->
+  <div id="board">
+    <!-- columns injected here -->
+    <button id="btn-add-col">
+      <span class="add-col-plus">+</span>
+      <span>Add Column</span>
+    </button>
+  </div>
+
+  <!-- Column name prompt -->
+  <div id="col-prompt" class="hidden">
+    <div class="prompt-box">
+      <p class="prompt-label">Column name</p>
+      <input id="col-name-input" type="text" maxlength="32" placeholder="e.g. My Screenshots">
+      <div class="prompt-actions">
+        <button id="col-prompt-cancel" class="btn-ghost">Cancel</button>
+        <button id="col-prompt-ok" class="btn-accent btn-sm">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="lightbox" class="hidden">
+    <div id="lb-backdrop"></div>
+    <div id="lb-box">
+      <button id="lb-close">✕</button>
+      <img id="lb-img" src="" alt="">
+      <div id="lb-text"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
