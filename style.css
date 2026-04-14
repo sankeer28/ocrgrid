@@ -12,7 +12,7 @@
   --dim:       #3E3E54;
   --warn:      #F87171;
   --hdr:       56px;
-  --hscroll:   10px;
+  --hscroll:   14px;
   --srch:      44px;
   --col-w:     420px;
 }
@@ -116,15 +116,15 @@ header {
 
 /* Horizontal scrollbar strip inside header */
 #board-hscroll {
-  height: var(--hscroll); overflow-x: auto; overflow-y: hidden;
+  height: 14px; overflow-x: auto; overflow-y: hidden;
   background: var(--surf2); border-top: 1px solid var(--border);
-  scrollbar-width: thin; scrollbar-color: var(--border2) var(--surf2);
+  scrollbar-width: thin; scrollbar-color: var(--muted) var(--surf2);
   cursor: default;
 }
-#board-hscroll::-webkit-scrollbar        { height: var(--hscroll); }
+#board-hscroll::-webkit-scrollbar        { height: 14px; }
 #board-hscroll::-webkit-scrollbar-track  { background: var(--surf2); }
-#board-hscroll::-webkit-scrollbar-thumb  { background: var(--border2); border-radius: 0; }
-#board-hscroll::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+#board-hscroll::-webkit-scrollbar-thumb  { background: var(--muted); border-radius: 8px; border: 3px solid var(--surf2); }
+#board-hscroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 #board-hscroll-inner { height: 1px; /* width set by JS */ }
 
 .logo { font-size: 18px; font-weight: 700; letter-spacing: -1px; }
@@ -171,10 +171,9 @@ header {
   flex: 1; display: flex; flex-direction: row;
   gap: 12px; padding: 16px; overflow-x: auto; overflow-y: visible;
   align-items: flex-start;
-  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  scrollbar-width: none;
 }
-#board::-webkit-scrollbar       { height: 5px; }
-#board::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#board::-webkit-scrollbar { display: none; }
 
 /* ── Add column button ───────────────────────────────────── */
 #btn-add-col {
@@ -246,19 +245,36 @@ header {
 
 /* Column resize handle */
 .col-resize {
-  position: absolute; right: -4px; top: 0; bottom: 0;
+  position: absolute; right: -8px; top: 0; bottom: 0;
   width: 8px; cursor: col-resize; z-index: 10;
+  background: var(--border2);
   display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
 }
-.col-resize::after {
-  content: ''; width: 2px; height: 32px;
-  background: var(--border2); border-radius: 2px;
-  transition: background .15s, height .15s;
+.col-resize:hover,
+.col-resize.dragging {
+  background: var(--accent);
 }
-.col-resize:hover::after,
-.col-resize.dragging::after {
-  background: var(--accent); height: 48px;
+.col-resize-icon {
+  width: 8px; height: 20px; color: var(--surf2);
+  transition: color .15s, opacity .15s;
+  opacity: .6;
 }
+.col-resize:hover .col-resize-icon,
+.col-resize.dragging .col-resize-icon {
+  color: #000; opacity: 1;
+}
+
+/* Click-to-paste badge in column header */
+.col-focus-badge {
+  font-size: 9px; letter-spacing: .5px; text-transform: uppercase;
+  padding: 2px 5px; border-radius: 3px; flex-shrink: 0;
+  border: 1px solid var(--border2); color: var(--dim);
+  transition: border-color .15s, color .15s;
+  pointer-events: none;
+}
+.col-header:hover .col-focus-badge { border-color: var(--muted); color: var(--muted); }
+.col.active .col-focus-badge { border-color: var(--accent); color: var(--accent); }
 
 .col-empty {
   padding: 32px 16px; text-align: center;

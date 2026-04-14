@@ -72,6 +72,7 @@ function bindEvents() {
   });
 
   $('btn-copy').addEventListener('click', copyLink);
+  $('btn-export').addEventListener('click', exportZip);
   $('btn-leave').addEventListener('click', leaveRoom);
   $('btn-search-close').addEventListener('click', closeSearch);
   $('search-input').addEventListener('input', e => { S.query = e.target.value; applySearch(); });
@@ -88,14 +89,6 @@ function bindEvents() {
   // Lightbox
   $('lb-backdrop').addEventListener('click', closeLightbox);
   $('lb-close').addEventListener('click', closeLightbox);
-
-  // Drag & drop on board (go to active column)
-  const board = $('board');
-  board.addEventListener('dragover',  e => { e.preventDefault(); });
-  board.addEventListener('drop', e => {
-    e.preventDefault();
-    [...e.dataTransfer.files].filter(f => f.type.startsWith('image/')).forEach(processFile);
-  });
 
   // Paste
   document.addEventListener('paste', e => {
@@ -237,16 +230,23 @@ function renderColumn(col) {
   el.className = 'col';
   el.dataset.colId = col.id;
   el.innerHTML = `
-    <div class="col-resize"></div>
-    <div class="col-header" title="Click to select · Double-click name to rename">
+    <div class="col-resize" title="Drag to resize column">
+      <svg class="col-resize-icon" viewBox="0 0 8 20" fill="currentColor">
+        <circle cx="2" cy="5"  r="1.2"/><circle cx="6" cy="5"  r="1.2"/>
+        <circle cx="2" cy="10" r="1.2"/><circle cx="6" cy="10" r="1.2"/>
+        <circle cx="2" cy="15" r="1.2"/><circle cx="6" cy="15" r="1.2"/>
+      </svg>
+    </div>
+    <div class="col-header">
       <span class="col-active-dot"></span>
       <span class="col-name">${esc(col.name)}</span>
       <span class="col-count">0</span>
+      <span class="col-focus-badge">click to paste</span>
     </div>
     <div class="col-images">
-      <div class="col-empty">Click to select,<br>then paste or upload</div>
+      <div class="col-empty">Click to select,<br>then paste (Ctrl+V)</div>
     </div>
-    <div class="col-drop-hint">↑ paste / drop here</div>`;
+    <div class="col-drop-hint">↑ paste here (Ctrl+V)</div>`;
 
   initColResize(el);
 
@@ -259,12 +259,6 @@ function renderColumn(col) {
     startRename(el, col.id);
   });
 
-  // Drop on this specific column
-  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('active'); setActiveCol(col.id); });
-  el.addEventListener('drop', e => {
-    e.preventDefault(); e.stopPropagation();
-    [...e.dataTransfer.files].filter(f => f.type.startsWith('image/')).forEach(processFile);
-  });
 
   board.insertBefore(el, addBtn);
 }
@@ -574,6 +568,74 @@ function initColResize(colEl) {
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });
+}
+
+// ════════════════════════════════════════════════════════════
+// EXPORT
+// ════════════════════════════════════════════════════════════
+async function exportZip() {
+  const btn = $('btn-export');
+  if (!S.images.size) return;
+
+  btn.textContent = 'zipping…';
+  btn.disabled = true;
+
+  const zip = new JSZip();
+
+  // Track used filenames per folder to avoid collisions
+  const folderUsed = new Map();
+
+  for (const [, img] of S.images) {
+    if (img._pending || !img.image_data) continue;
+
+    const col = S.columns.get(img.column_id);
+    const folderName = sanitizeName(col?.name || 'unknown');
+
+    if (!folderUsed.has(folderName)) folderUsed.set(folderName, new Map());
+    const used = folderUsed.get(folderName);
+
+    const ext = extFromImg(img);
+    const baseName = sanitizeName(img.file_name?.replace(/\.[^.]+$/, '') || 'image');
+
+    // Ensure unique filename within the folder
+    let fileName = baseName + '.' + ext;
+    if (used.has(fileName)) {
+      const n = used.get(fileName) + 1;
+      used.set(fileName, n);
+      fileName = `${baseName}_${n}.${ext}`;
+    } else {
+      used.set(fileName, 1);
+    }
+
+    const b64 = img.image_data.split(',')[1];
+    if (!b64) continue;
+    zip.folder(folderName).file(fileName, b64, { base64: true });
+  }
+
+  try {
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ocrgrid-${S.roomCode}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    console.error('[export]', e);
+  }
+
+  btn.textContent = 'export zip';
+  btn.disabled = false;
+}
+
+function sanitizeName(s) {
+  return s.replace(/[\\/:*?"<>|]/g, '_').trim() || 'unnamed';
+}
+
+function extFromImg(img) {
+  const match = img.image_data?.match(/^data:image\/(\w+);/);
+  if (match) return match[1] === 'jpeg' ? 'jpg' : match[1];
+  const fn = img.file_name || '';
+  return fn.includes('.') ? fn.split('.').pop().toLowerCase() : 'jpg';
 }
 
 // ════════════════════════════════════════════════════════════

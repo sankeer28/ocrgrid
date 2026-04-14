@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js"></script>
 </head>
 <body>
 
@@ -45,6 +46,7 @@
       </div>
       <div class="hd-right">
         <span class="kbd-hint">ctrl+f search</span>
+        <button id="btn-export" class="btn-ghost">export zip</button>
         <label class="btn-accent btn-sm upload-label">
           + Upload
           <input id="file-input" type="file" accept="image/*" multiple>
