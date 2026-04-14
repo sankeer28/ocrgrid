@@ -540,9 +540,9 @@ function parseSelectedOption(text) {
   const src = (text || '').replace(/\r/g, ' ').replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!src) return null;
 
-  // Includes OCR variants where empty circles are misread as (D)/(d).
-  const markerRx = /(\(o\)|\(O\)|\(\*\)|[@®]|[●◉]|\(D\)?|\(d\)?|\(\s*\)|[○◯]|\bO\b)/g;
-  const selectedMarkers = new Set(['(o)', '(O)', '(*)', '@', '®', '●', '◉']);
+  // Includes OCR variants where bubbles are read as (e)/(0) and empty circles as (D)/(d).
+  const markerRx = /(\(o\)|\(O\)|\(e\)|\(E\)|\(0\)|\(\*\)|[@®]|[●◉]|\(D\)?|\(d\)?|\(\s*\)|[○◯]|\bO\b)/g;
+  const selectedMarkers = new Set(['(o)', '(O)', '(e)', '(E)', '(0)', '(*)', '@', '®', '●', '◉']);
   const marks = [...src.matchAll(markerRx)];
   if (!marks.length) return null;
 
