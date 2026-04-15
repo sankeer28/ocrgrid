@@ -46,7 +46,25 @@ body {
   font-size: 52px; font-weight: 700; letter-spacing: -2px; line-height: 1;
   font-family: 'Inter', sans-serif; color: var(--text);
 }
-.land-logo span { color: var(--accent); font-style: normal; }
+.land-logo span,
+.logo em {
+  display: inline-block;
+  color: transparent;
+  font-style: normal;
+  letter-spacing: .5px;
+  background-color: #f4f4fa;
+  background-image:
+    linear-gradient(rgba(0, 0, 0, .26) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, .26) 1px, transparent 1px);
+  background-size: 7px 7px, 7px 7px;
+  background-position: 0 0, 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, .55);
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, .1),
+    0 0 18px rgba(230, 230, 255, .12);
+}
 
 .land-sub { font-size: 12px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
 
@@ -155,7 +173,6 @@ header {
 }
 
 .logo { font-size: 18px; font-weight: 700; letter-spacing: -1px; }
-.logo em { color: var(--accent); font-style: normal; }
 
 .room-pill {
   display: flex; align-items: center; gap: 6px;
