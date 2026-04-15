@@ -32,11 +32,13 @@ const OCR_SCRIBE_OPTIONS = {
   mode: 'quality',
   modeAdv: 'lstm',
 };
+const THEME_KEY = 'ocrgrid_theme';
 
 // ════════════════════════════════════════════════════════════
 // BOOT
 // ════════════════════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
   initOCR();
   bindEvents();
   try {
@@ -153,6 +155,7 @@ function bindEvents() {
   });
 
   $('btn-copy').addEventListener('click', copyLink);
+  $('btn-theme')?.addEventListener('click', toggleTheme);
   $('btn-copy-mobile')?.addEventListener('click', copyLink);
   $('btn-export').addEventListener('click', exportZip);
   $('btn-export-mobile')?.addEventListener('click', exportZip);
@@ -191,6 +194,43 @@ function bindEvents() {
       if (S.searchOpen) closeSearch();
     }
   });
+}
+
+function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  const theme = saved || 'dark';
+  applyTheme(theme);
+}
+
+function applyTheme(theme) {
+  const normalized = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', normalized);
+  localStorage.setItem(THEME_KEY, normalized);
+  const btn = $('btn-theme');
+  if (btn) {
+    const switchingTo = normalized === 'light' ? 'dark' : 'light';
+    btn.innerHTML = switchingTo === 'light' ? themeIconSun() : themeIconMoon();
+    btn.setAttribute('aria-label', `Switch to ${switchingTo} mode`);
+    btn.setAttribute('title', `Switch to ${switchingTo} mode`);
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current === 'light' ? 'dark' : 'light');
+}
+
+function themeIconSun() {
+  return `<svg class="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9 5.3 5.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function themeIconMoon() {
+  return `<svg class="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M14.8 3.2a8.9 8.9 0 1 0 6 15.6A9.7 9.7 0 1 1 14.8 3.2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+  </svg>`;
 }
 
 // ════════════════════════════════════════════════════════════
