@@ -252,6 +252,7 @@ async function joinRoom(code) {
   history.pushState({}, '', url);
   show('app');
   initBoardScrollbar();
+  startDbUsagePolling();
 
   // Load columns
   const { data: cols } = await sb
@@ -327,6 +328,7 @@ async function joinRoom(code) {
 }
 
 function leaveRoom() {
+  stopDbUsagePolling();
   S.imgChannel?.unsubscribe();
   S.colChannel?.unsubscribe();
   S.imgChannel = S.colChannel = null;
@@ -1308,6 +1310,47 @@ async function deleteColumn(id) {
     S.columns.set(id, col);
     renderColumn(col);
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// DB USAGE
+// ════════════════════════════════════════════════════════════
+const DB_LIMIT_BYTES = 500 * 1024 * 1024; // 500 MB free tier
+let _dbUsageTimer = null;
+
+function startDbUsagePolling() {
+  fetchDbUsage();
+  _dbUsageTimer = setInterval(fetchDbUsage, 30_000);
+}
+
+function stopDbUsagePolling() {
+  clearInterval(_dbUsageTimer);
+  _dbUsageTimer = null;
+  $('db-usage')?.classList.add('hidden');
+}
+
+async function fetchDbUsage() {
+  try {
+    const { data, error } = await sb.rpc('get_db_size');
+    if (error || data == null) return;
+    renderDbUsage(Number(data));
+  } catch { /* silently ignore */ }
+}
+
+function renderDbUsage(bytes) {
+  const el    = $('db-usage');
+  const fill  = $('db-usage-fill');
+  const label = $('db-usage-label');
+  if (!el || !fill || !label) return;
+
+  const pct   = Math.min(100, (bytes / DB_LIMIT_BYTES) * 100);
+  const mb    = (bytes / (1024 * 1024)).toFixed(1);
+
+  fill.style.width = pct + '%';
+  fill.classList.toggle('warn', pct >= 70 && pct < 90);
+  fill.classList.toggle('crit', pct >= 90);
+  label.textContent = `${mb} MB / 500 MB`;
+  el.classList.remove('hidden');
 }
 
 // ════════════════════════════════════════════════════════════

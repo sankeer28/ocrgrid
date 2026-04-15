@@ -255,6 +255,24 @@ header {
 
 .kbd-hint { font-size: 10px; color: var(--dim); letter-spacing: .5px; }
 
+/* DB usage indicator */
+.db-usage {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.db-usage.hidden { display: none; }
+.db-usage-bar {
+  width: 64px; height: 4px; border-radius: 99px;
+  background: var(--border2); overflow: hidden; flex-shrink: 0;
+}
+.db-usage-fill {
+  height: 100%; width: 0%; border-radius: 99px;
+  background: var(--muted);
+  transition: width .4s ease, background .4s ease;
+}
+.db-usage-fill.warn { background: #F59E0B; }
+.db-usage-fill.crit { background: var(--warn); }
+#db-usage-label { font-size: 10px; color: var(--dim); white-space: nowrap; }
+
 .upload-label {
   cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
 }
