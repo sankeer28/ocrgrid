@@ -33,6 +33,7 @@ const OCR_SCRIBE_OPTIONS = {
   mode: 'quality',
   modeAdv: 'lstm',
 };
+const OCR_ENABLE_ON_MOBILE = false;
 const THEME_KEY = 'ocrgrid_theme';
 
 // ════════════════════════════════════════════════════════════
@@ -495,6 +496,7 @@ async function processFile(file) {
 
 async function getOCRTextSafe(file, imageData) {
   if (isMobileClient()) {
+    if (!OCR_ENABLE_ON_MOBILE) return '';
     if (S.mobileOCRDisabled) return '';
     try {
       // Mobile browsers can crash/freeze on OCR; fail open and keep upload working.
