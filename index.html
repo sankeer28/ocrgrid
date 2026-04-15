@@ -54,6 +54,31 @@
         <button id="btn-leave" class="btn-ghost">leave</button>
       </div>
     </div>
+    <div id="mobile-header-actions">
+      <button id="btn-copy-mobile" class="btn-ghost">
+        <svg class="mobile-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="9" y="9" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+          <rect x="5" y="5" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        </svg>
+        <span>copy link</span>
+      </button>
+      <button id="btn-export-mobile" class="btn-ghost">
+        <svg class="mobile-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 4v10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M8.5 10.5 12 14l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="5" y="16" width="14" height="4" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        </svg>
+        <span>export zip</span>
+      </button>
+      <button id="btn-leave-mobile" class="btn-ghost">
+        <svg class="mobile-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 6H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M14 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18 12H9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <span>leave</span>
+      </button>
+    </div>
     <div id="board-hscroll" aria-label="Horizontal board scrollbar">
       <div id="board-hscroll-track">
         <div id="board-hscroll-thumb"></div>
@@ -79,8 +104,21 @@
   </div>
 
   <div id="mobile-upload-wrap" class="hidden">
-    <button id="btn-search-mobile" class="btn-ghost">Search</button>
-    <button id="btn-upload-mobile" class="btn-accent">Upload Photo</button>
+    <button id="btn-search-mobile" class="btn-ghost">
+      <svg class="mobile-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M16 16l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <span>Search</span>
+    </button>
+    <button id="btn-upload-mobile" class="btn-accent">
+      <svg class="mobile-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8.5 8.5 12 5l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="5" y="14" width="14" height="5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      </svg>
+      <span>Upload Photo</span>
+    </button>
   </div>
 
   <!-- Column name prompt -->

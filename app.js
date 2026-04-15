@@ -153,8 +153,11 @@ function bindEvents() {
   });
 
   $('btn-copy').addEventListener('click', copyLink);
+  $('btn-copy-mobile')?.addEventListener('click', copyLink);
   $('btn-export').addEventListener('click', exportZip);
+  $('btn-export-mobile')?.addEventListener('click', exportZip);
   $('btn-leave').addEventListener('click', leaveRoom);
+  $('btn-leave-mobile')?.addEventListener('click', leaveRoom);
   $('btn-search-close').addEventListener('click', closeSearch);
   $('search-input').addEventListener('input', e => { S.query = e.target.value; applySearch(); });
 
@@ -333,7 +336,7 @@ function renderColumn(col) {
       <span class="col-active-dot"></span>
       <span class="col-name">${esc(col.name)}</span>
       <span class="col-count">0</span>
-      <span class="col-focus-badge">click to paste</span>
+      <span class="col-focus-badge">click to select</span>
       ${col.created_by === S.ip ? '<button class="col-delete" title="Delete column">✕</button>' : ''}
     </div>
     <div class="col-images">
