@@ -1,6 +1,6 @@
 # OCRGRID
 
-A collaborative image board where you paste screenshots into columns and search the text inside them. OCR runs locally in your browser — nothing is sent to any server except the image data stored in your own Supabase project.
+A collaborative image board where you paste screenshots into columns and search the text inside them. OCR runs locally in your browser. Images are stored in Supabase and automatically deleted after 7 days.
 
 ## How it works
 

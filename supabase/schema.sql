@@ -62,3 +62,40 @@ CREATE POLICY "open_delete" ON public.images FOR DELETE USING (true);
 
 ALTER PUBLICATION supabase_realtime ADD TABLE public.columns;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.images;
+
+
+-- ── DB usage function ─────────────────────────────────────────
+-- Returns the total bytes of live image data stored.
+-- Responds immediately to deletes (unlike pg_database_size).
+
+CREATE OR REPLACE FUNCTION public.get_db_size()
+RETURNS bigint
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(sum(
+    length(COALESCE(image_data, '')) +
+    length(COALESCE(ocr_text, '')) +
+    length(COALESCE(file_name, ''))
+  ), 0)::bigint
+  FROM images;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_db_size() TO anon;
+
+
+-- ── Auto-cleanup ──────────────────────────────────────────────
+-- Deletes images older than 7 days every day at 3am UTC.
+
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+SELECT cron.schedule(
+  'delete-old-images',
+  '0 3 * * *',
+  $$
+    DELETE FROM public.images WHERE uploaded_at < now() - interval '7 days';
+    DELETE FROM public.columns
+      WHERE id NOT IN (SELECT DISTINCT column_id FROM public.images WHERE column_id IS NOT NULL);
+  $$
+);
