@@ -1,4 +1,5 @@
-# OCRGRID
+<img width="1248" height="342" alt="image" src="https://github.com/user-attachments/assets/8ae40da5-27c9-4131-a07c-dfa69d4d1a7a" />
+
 
 A collaborative image board where you paste screenshots into columns and search the text inside them. OCR runs locally in your browser — nothing is sent to any server except the image data stored in your own Supabase project.
 
