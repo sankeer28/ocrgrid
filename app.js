@@ -662,9 +662,9 @@ function closeSearch() {
 
 function applySearch() {
   if (!S.query) { clearSearchStates(); $('search-count').textContent = ''; return; }
-  const q = S.query.toLowerCase();
-  const exactHits = [];
-  const fuzzyHits = [];
+  const q = S.query;
+  const hits = [];
+  let fuzzyCount = 0;
   const colHits = new Set();
 
   document.querySelectorAll('.img-card').forEach(card => {
@@ -674,62 +674,69 @@ function applySearch() {
       return;
     }
 
-    const text = row.ocr_text || '';
-    const lower = text.toLowerCase();
-    const exact = lower.includes(q);
-
-    if (exact) {
-      exactHits.push({ card, row, score: 1 });
-      colHits.add(card.dataset.colId);
-      card.classList.add('search-hit');
-      card.classList.remove('search-miss');
-      applySearchToCard(card, row, q);
-      return;
-    }
-
-    const score = fuzzyScore(q, lower);
-    if (score >= 0.62) {
-      fuzzyHits.push({ card, row, score });
-      colHits.add(card.dataset.colId);
-      card.classList.add('search-hit');
-      card.classList.remove('search-miss');
-      applyFuzzySearchToCard(card, row, q, score);
-    } else {
+    const match = evaluateSearchMatch(q, row.ocr_text || '');
+    if (!match || match.score < 0.66) {
       card.classList.remove('search-hit', 'search-hit-active');
       card.classList.add('search-miss');
       restoreOCREl(card, row);
+      return;
     }
+
+    if (!match.exact) fuzzyCount++;
+    hits.push({ card, match });
+    colHits.add(card.dataset.colId);
+    card.classList.add('search-hit');
+    card.classList.remove('search-miss');
+    if (match.exact) applySearchToCard(card, row, match);
+    else applyFuzzySearchToCard(card, row, match);
   });
 
-  const usingFuzzy = exactHits.length === 0;
-  const activeHits = usingFuzzy ? fuzzyHits.sort((a, b) => b.score - a.score) : exactHits;
-  setActiveSearchHit(activeHits[0]?.card || null);
-  if (activeHits.length) scrollToSearchHit(activeHits[0].card);
+  hits.sort((a, b) => {
+    if (a.match.exact !== b.match.exact) return a.match.exact ? -1 : 1;
+    return b.match.score - a.match.score;
+  });
+
+  const lead = hits[0]?.card || null;
+  setActiveSearchHit(lead);
+  if (lead) scrollToSearchHit(lead);
 
   // Dim columns with no hits
   document.querySelectorAll('.col').forEach(col => {
     col.classList.toggle('col-search-miss', !colHits.has(col.dataset.colId));
   });
 
-  if (activeHits.length === 0) {
+  if (hits.length === 0) {
     $('search-count').textContent = 'no matches';
-  } else if (usingFuzzy) {
-    $('search-count').textContent = `${activeHits.length} fuzzy match${activeHits.length > 1 ? 'es' : ''}`;
-  } else {
-    $('search-count').textContent = `${activeHits.length} match${activeHits.length > 1 ? 'es' : ''}`;
+    return;
   }
+
+  if (fuzzyCount === 0) {
+    $('search-count').textContent = `${hits.length} match${hits.length > 1 ? 'es' : ''}`;
+    return;
+  }
+
+  $('search-count').textContent = `${hits.length} match${hits.length > 1 ? 'es' : ''} (${fuzzyCount} fuzzy)`;
 }
 
-function applySearchToCard(card, row, q) {
+function applySearchToCard(card, row, match) {
   const ocrDiv = card.querySelector('.img-ocr-text');
   if (!ocrDiv || !row.ocr_text) return;
-  const lower = row.ocr_text.toLowerCase();
-  const idx   = lower.indexOf(q);
-  if (idx === -1) return;
-  const s    = Math.max(0, idx - 60);
-  const e    = Math.min(row.ocr_text.length, idx + q.length + 60);
-  const snip = `${s > 0 ? '…' : ''}${esc(row.ocr_text.slice(s, idx))}<mark>${esc(row.ocr_text.slice(idx, idx + q.length))}</mark>${esc(row.ocr_text.slice(idx + q.length, e))}${e < row.ocr_text.length ? '…' : ''}`;
-  ocrDiv.innerHTML = snip;
+
+  const bodyLower = row.ocr_text.toLowerCase();
+  const queryLower = (match.queryNormalized || '').toLowerCase();
+  let idx = queryLower ? bodyLower.indexOf(queryLower) : -1;
+
+  if (idx === -1 && match.bestSegmentRaw) {
+    idx = bodyLower.indexOf(match.bestSegmentRaw.toLowerCase());
+  }
+
+  if (idx === -1) {
+    ocrDiv.innerHTML = buildSnippet(row.ocr_text, match.bestStart || 0, match.bestEnd || 0);
+    return;
+  }
+
+  const len = Math.max(1, queryLower.length || (match.bestSegmentRaw || '').length || 1);
+  ocrDiv.innerHTML = buildSnippet(row.ocr_text, idx, idx + len);
 }
 
 function restoreOCREl(card, row) {
@@ -746,11 +753,19 @@ function clearSearchStates() {
   document.querySelectorAll('.col').forEach(col => col.classList.remove('col-search-miss'));
 }
 
-function applyFuzzySearchToCard(card, row, q, score) {
+function applyFuzzySearchToCard(card, row, match) {
   const ocrDiv = card.querySelector('.img-ocr-text');
   if (!ocrDiv || !row.ocr_text) return;
-  const preview = esc(trunc(row.ocr_text, 180));
-  ocrDiv.innerHTML = `${preview}<br><span class="img-ocr-empty">fuzzy ${(score * 100).toFixed(0)}%</span>`;
+  const snippet = buildSnippet(row.ocr_text, match.bestStart || 0, match.bestEnd || 0);
+  ocrDiv.innerHTML = `${snippet}<br><span class="img-ocr-empty">fuzzy ${(match.score * 100).toFixed(0)}%</span>`;
+}
+
+function buildSnippet(text, matchStart, matchEnd) {
+  const start = Math.max(0, matchStart || 0);
+  const end = Math.max(start + 1, matchEnd || start + 1);
+  const s = Math.max(0, start - 60);
+  const e = Math.min(text.length, end + 60);
+  return `${s > 0 ? '...' : ''}${esc(text.slice(s, start))}<mark>${esc(text.slice(start, end))}</mark>${esc(text.slice(end, e))}${e < text.length ? '...' : ''}`;
 }
 
 function setActiveSearchHit(card) {
@@ -772,24 +787,163 @@ function scrollToSearchHit(card) {
   card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
 }
 
-function fuzzyScore(q, text) {
-  const query = normalizeSearchText(q);
-  const body = normalizeSearchText(text);
-  if (!query || !body) return 0;
-  if (body.includes(query)) return 1;
+function evaluateSearchMatch(query, text) {
+  const queryNorm = normalizeSearchText(query);
+  const textNorm = normalizeSearchText(text);
+  if (!queryNorm || !textNorm) return null;
 
-  const qTokens = query.split(/\s+/).filter(Boolean);
-  const tTokens = body.split(/\s+/).filter(Boolean);
-  if (!qTokens.length || !tTokens.length) return 0;
-
-  let tokenHits = 0;
-  for (const qt of qTokens) {
-    if (tTokens.some(tt => tt.includes(qt) || qt.includes(tt))) tokenHits++;
+  const exactIdx = textNorm.indexOf(queryNorm);
+  if (exactIdx !== -1) {
+    const rawPos = mapNormalizedSpanToRaw(text, queryNorm, exactIdx);
+    return {
+      score: 1,
+      exact: true,
+      queryNormalized: queryNorm,
+      bestSegmentRaw: rawPos.segment,
+      bestStart: rawPos.start,
+      bestEnd: rawPos.end,
+    };
   }
-  const tokenScore = tokenHits / qTokens.length;
 
-  const gramScore = diceCoefficient(bigrams(query), bigrams(body));
-  return Math.max(tokenScore, gramScore);
+  const queryTokens = tokenizeSearchText(queryNorm);
+  const textTokens = tokenizeSearchText(textNorm);
+  if (!queryTokens.length || !textTokens.length) return null;
+
+  const tokenCoverage = queryTokenCoverage(queryTokens, textTokens);
+  const bestWindow = findBestTokenWindow(queryNorm, textNorm, queryTokens.length);
+  const charScore = diceCoefficient(bigrams(queryNorm), bigrams(textNorm));
+  const score = clamp01((tokenCoverage * 0.46) + (bestWindow.score * 0.42) + (charScore * 0.12));
+
+  const bestRaw = mapNormalizedSpanToRaw(text, bestWindow.segment, bestWindow.index);
+  return {
+    score,
+    exact: false,
+    queryNormalized: queryNorm,
+    bestSegmentRaw: bestRaw.segment,
+    bestStart: bestRaw.start,
+    bestEnd: bestRaw.end,
+  };
+}
+
+function tokenizeSearchText(v) {
+  return v.split(/\s+/).filter(Boolean);
+}
+
+function queryTokenCoverage(queryTokens, textTokens) {
+  let hits = 0;
+  for (const q of queryTokens) {
+    let best = 0;
+    for (const t of textTokens) {
+      if (!t) continue;
+      if (t.includes(q) || q.includes(t)) {
+        best = 1;
+        break;
+      }
+      best = Math.max(best, similarityByEditDistance(q, t));
+      if (best >= 0.96) break;
+    }
+    if (best >= 0.7) hits++;
+  }
+  return hits / queryTokens.length;
+}
+
+function findBestTokenWindow(query, text, queryTokenCount) {
+  const tokens = tokenizeSearchText(text);
+  if (!tokens.length) return { score: 0, segment: text, index: 0 };
+
+  const minWindow = Math.max(1, queryTokenCount - 1);
+  const maxWindow = Math.min(tokens.length, queryTokenCount + 2);
+  let best = { score: 0, segment: tokens[0], index: text.indexOf(tokens[0]) };
+  let checks = 0;
+
+  for (let size = minWindow; size <= maxWindow; size++) {
+    for (let i = 0; i <= tokens.length - size; i++) {
+      const segment = tokens.slice(i, i + size).join(' ');
+      const index = text.indexOf(segment);
+      if (index === -1) continue;
+      const score = similarityByEditDistance(query, segment);
+      if (score > best.score) {
+        best = { score, segment, index };
+      }
+      checks++;
+      if (checks >= 600) return best;
+    }
+  }
+
+  return best;
+}
+
+function mapNormalizedSpanToRaw(rawText, segmentNorm, indexNorm) {
+  if (!rawText || !segmentNorm) return { segment: '', start: 0, end: 0 };
+
+  const rawLower = rawText.toLowerCase();
+  const direct = rawLower.indexOf(segmentNorm);
+  if (direct !== -1) {
+    return {
+      segment: rawText.slice(direct, direct + segmentNorm.length),
+      start: direct,
+      end: direct + segmentNorm.length,
+    };
+  }
+
+  const chunk = rawText.split(/\s+/).find(part => similarityByEditDistance(segmentNorm, normalizeSearchText(part)) >= 0.72);
+  if (chunk) {
+    const start = rawText.indexOf(chunk);
+    if (start !== -1) {
+      return {
+        segment: chunk,
+        start,
+        end: start + chunk.length,
+      };
+    }
+  }
+
+  const fallbackStart = Math.max(0, Math.min(rawText.length - 1, indexNorm || 0));
+  const fallbackEnd = Math.min(rawText.length, fallbackStart + Math.max(1, segmentNorm.length));
+  return {
+    segment: rawText.slice(fallbackStart, fallbackEnd),
+    start: fallbackStart,
+    end: fallbackEnd,
+  };
+}
+
+function similarityByEditDistance(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const maxLen = Math.max(a.length, b.length);
+  if (!maxLen) return 1;
+  const dist = damerauLevenshteinDistance(a, b);
+  return clamp01(1 - (dist / maxLen));
+}
+
+function damerauLevenshteinDistance(a, b) {
+  const al = a.length;
+  const bl = b.length;
+  const dp = Array.from({ length: al + 1 }, () => Array(bl + 1).fill(0));
+
+  for (let i = 0; i <= al; i++) dp[i][0] = i;
+  for (let j = 0; j <= bl; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= al; i++) {
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost,
+      );
+
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        dp[i][j] = Math.min(dp[i][j], dp[i - 2][j - 2] + cost);
+      }
+    }
+  }
+
+  return dp[al][bl];
+}
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
 }
 
 function normalizeSearchText(v) {
