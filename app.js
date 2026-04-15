@@ -282,6 +282,17 @@ async function joinRoom(code) {
         syncColCounts();
         if (S.searchOpen) applySearch();
       })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'images', filter: `room_code=eq.${code}` },
+      ({ new: row }) => {
+        if (!S.images.has(row.id)) return;
+        const prev = S.images.get(row.id);
+        S.images.set(row.id, { ...prev, ...row });
+        // If OCR text just arrived from another client, update the card
+        if (row.ocr_text && row.ocr_text !== prev.ocr_text) {
+          updateImgCardOCR(row.id, row.ocr_text);
+          if (S.searchOpen) applySearch();
+        }
+      })
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'images' },
       ({ old: row }) => {
         if (!S.images.has(row.id)) return;
@@ -552,6 +563,83 @@ async function toBase64(file) {
   });
 }
 
+// ════════════════════════════════════════════════════════════
+// COLLABORATIVE OCR (desktop only)
+// ════════════════════════════════════════════════════════════
+
+// Called after every non-pending card render. On desktop, if the
+// image has no OCR text we race to claim a distributed lock and
+// run OCR, then push the result so every client updates.
+function scheduleOCRIfNeeded(row) {
+  if (isMobileClient()) return;
+  if (row._pending || row.ocr_text) return;
+  // Random jitter so multiple desktop clients don't all claim simultaneously
+  const delay = Math.floor(Math.random() * 1500);
+  setTimeout(() => tryClaimAndRunOCR(row.id), delay);
+}
+
+async function tryClaimAndRunOCR(imgId) {
+  const row = S.images.get(imgId);
+  if (!row || row.ocr_text || row._pending) return; // already filled
+
+  // Claim the lock atomically — only succeeds if no one else holds it
+  // (or their lock expired more than 2 minutes ago)
+  const expiry = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { data: claimed } = await sb
+    .from('images')
+    .update({ ocr_locked_by: S.ip, ocr_locked_at: new Date().toISOString() })
+    .eq('id', imgId)
+    .eq('ocr_text', '')
+    .or(`ocr_locked_by.is.null,ocr_locked_at.lt.${expiry}`)
+    .select('id');
+
+  if (!claimed?.length) return; // another client got there first
+
+  // Show local scanning indicator
+  const card = document.querySelector(`.img-card[data-id="${imgId}"]`);
+  const ocrDiv = card?.querySelector('.img-ocr');
+  if (ocrDiv) ocrDiv.innerHTML = '<span class="img-ocr-scan">reading text…</span>';
+
+  try {
+    const imgRow = S.images.get(imgId);
+    // Convert stored data URL back to a Blob so Scribe.js is happy
+    const blob = await fetch(imgRow.image_data).then(r => r.blob());
+    const file = new File([blob], imgRow.file_name || 'image.jpg', { type: blob.type });
+
+    const ocrText = await runOCR(file, imgRow.image_data).catch(() => '');
+
+    // Push result and release lock in one update
+    await sb.from('images').update({
+      ocr_text:       ocrText,
+      ocr_locked_by:  null,
+      ocr_locked_at:  null,
+    }).eq('id', imgId);
+
+    // Update local state + card (realtime UPDATE will handle other clients)
+    S.images.set(imgId, { ...S.images.get(imgId), ocr_text: ocrText });
+    updateImgCardOCR(imgId, ocrText);
+    if (S.searchOpen) applySearch();
+
+  } catch (err) {
+    console.error('[collab OCR]', err);
+    // Release lock so someone else can try
+    await sb.from('images').update({ ocr_locked_by: null, ocr_locked_at: null }).eq('id', imgId);
+    if (ocrDiv) ocrDiv.innerHTML = '<span class="img-ocr-empty">no text found</span>';
+  }
+}
+
+function updateImgCardOCR(imgId, ocrText) {
+  const card = document.querySelector(`.img-card[data-id="${imgId}"]`);
+  if (!card) return;
+  const ocrDiv = card.querySelector('.img-ocr');
+  if (!ocrDiv) return;
+  if (ocrText) {
+    ocrDiv.innerHTML = `<div class="img-ocr-text">${esc(ocrText)}</div>`;
+  } else {
+    ocrDiv.innerHTML = '<span class="img-ocr-empty">no text found</span>';
+  }
+}
+
 function flashNoCol() {
   const btn = $('btn-add-col');
   btn.style.borderColor = '#F87171';
@@ -578,6 +666,7 @@ function appendImgCard(row) {
 
   bindImgCardEvents(card, row);
   syncColCounts();
+  scheduleOCRIfNeeded(row);
 }
 
 function finaliseImgCard(el, row) {
@@ -585,6 +674,7 @@ function finaliseImgCard(el, row) {
   el.classList.add('in');
   bindImgCardEvents(el, row);
   if (S.query) applySearchToCard(el, row, S.query.toLowerCase());
+  scheduleOCRIfNeeded(row);
 }
 
 function bindImgCardEvents(card, row) {

@@ -7,7 +7,7 @@ A collaborative image board where you paste screenshots into columns and search 
 - Create or join a room with a 6-character code
 - Add columns to organise your images
 - Paste images with Ctrl+V into a focused column
-- Tesseract.js reads the text out of every image locally
+- OCR runs locally in your browser using Scribe.js (with optional Tesseract fallback)
 - All connected users see uploads and deletes in real time
 - Use Ctrl+F to search text across all images
 - Export everything as a ZIP, organized by column name
@@ -16,7 +16,8 @@ A collaborative image board where you paste screenshots into columns and search 
 ## Technologies
 
 - **Supabase** — Postgres database + realtime subscriptions
-- **Tesseract.js** — in-browser OCR
+- **Scribe.js OCR** — primary in-browser OCR engine (vendored in this repo)
+- **Tesseract.js** — fallback OCR engine for compatibility
 - **JSZip** — client-side ZIP export
 - **Vanilla JS / CSS** — no framework
 

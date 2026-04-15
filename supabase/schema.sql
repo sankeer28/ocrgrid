@@ -17,14 +17,16 @@ CREATE TABLE IF NOT EXISTS public.columns (
 );
 
 CREATE TABLE IF NOT EXISTS public.images (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  room_code   text        NOT NULL,
-  column_id   uuid REFERENCES public.columns(id) ON DELETE CASCADE,
-  image_data  text,                        -- base64 JPEG data URL
-  file_name   text,
-  ocr_text    text        NOT NULL DEFAULT '',
-  uploader_id text,                        -- stores uploader IP
-  uploaded_at timestamptz NOT NULL DEFAULT now()
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_code      text        NOT NULL,
+  column_id      uuid REFERENCES public.columns(id) ON DELETE CASCADE,
+  image_data     text,                        -- base64 JPEG data URL
+  file_name      text,
+  ocr_text       text        NOT NULL DEFAULT '',
+  uploader_id    text,                        -- stores uploader IP
+  uploaded_at    timestamptz NOT NULL DEFAULT now(),
+  ocr_locked_by  text,                        -- IP of client currently running OCR
+  ocr_locked_at  timestamptz                  -- lock timestamp; expires after 2 minutes
 );
 
 
@@ -51,6 +53,7 @@ CREATE POLICY "open_delete" ON public.columns FOR DELETE USING (true);
 -- images
 CREATE POLICY "open_read"   ON public.images FOR SELECT USING (true);
 CREATE POLICY "open_insert" ON public.images FOR INSERT WITH CHECK (true);
+CREATE POLICY "open_update" ON public.images FOR UPDATE USING (true);
 CREATE POLICY "open_delete" ON public.images FOR DELETE USING (true);
 
 
