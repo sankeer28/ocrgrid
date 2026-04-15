@@ -1320,7 +1320,7 @@ let _dbUsageTimer = null;
 
 function startDbUsagePolling() {
   fetchDbUsage();
-  _dbUsageTimer = setInterval(fetchDbUsage, 30_000);
+  _dbUsageTimer = setInterval(fetchDbUsage, 5_000);
 }
 
 function stopDbUsagePolling() {
