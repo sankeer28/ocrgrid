@@ -17,6 +17,7 @@ const S = {
   ocrReady:      false,
   imgChannel:    null,
   colChannel:    null,
+  boardSync:     null,
 };
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -145,6 +146,10 @@ function bindEvents() {
   $('file-input').addEventListener('change', e => {
     [...e.target.files].forEach(f => processFile(f));
     e.target.value = '';
+  });
+  $('btn-upload-mobile')?.addEventListener('click', () => $('file-input').click());
+  $('btn-search-mobile')?.addEventListener('click', () => {
+    if (S.roomCode) openSearch();
   });
 
   $('btn-copy').addEventListener('click', copyLink);
@@ -773,27 +778,133 @@ function diceCoefficient(a, b) {
 // BOARD SCROLLBAR SYNC (top navbar ↔ board)
 // ════════════════════════════════════════════════════════════
 function initBoardScrollbar() {
+  if (S.boardSync?.cleanup) S.boardSync.cleanup();
+
   const board   = $('board');
   const hscroll = $('board-hscroll');
-  const inner   = $('board-hscroll-inner');
+  const track   = $('board-hscroll-track');
+  const thumb   = $('board-hscroll-thumb');
+  if (!board || !hscroll || !track || !thumb) return;
 
-  const updateWidth = () => {
-    inner.style.width = board.scrollWidth + 'px';
+  let rafId = 0;
+  let maxScroll = 0;
+  let maxThumbLeft = 0;
+  let thumbWidth = 46;
+  let dragging = false;
+  let dragOffsetX = 0;
+
+  const setOverflowState = () => {
+    const hasOverflow = board.scrollWidth > board.clientWidth + 2;
+    hscroll.classList.toggle('show', hasOverflow);
+    if (!hasOverflow) {
+      board.scrollLeft = 0;
+      thumb.style.transform = 'translateX(0px)';
+    }
+    return hasOverflow;
   };
-  updateWidth();
-  new ResizeObserver(updateWidth).observe(board);
 
-  let syncing = false;
-  hscroll.addEventListener('scroll', () => {
-    if (syncing) return; syncing = true;
-    board.scrollLeft = hscroll.scrollLeft;
-    syncing = false;
-  });
-  board.addEventListener('scroll', () => {
-    if (syncing) return; syncing = true;
-    hscroll.scrollLeft = board.scrollLeft;
-    syncing = false;
-  });
+  const syncThumbFromBoard = () => {
+    if (maxScroll <= 0 || maxThumbLeft <= 0) {
+      thumb.style.transform = 'translateX(0px)';
+      return;
+    }
+    const ratio = board.scrollLeft / maxScroll;
+    const left = Math.max(0, Math.min(maxThumbLeft, ratio * maxThumbLeft));
+    thumb.style.transform = `translateX(${left}px)`;
+  };
+
+  const updateMetrics = () => {
+    const hasOverflow = setOverflowState();
+    if (!hasOverflow) return;
+
+    const trackWidth = track.clientWidth;
+    const visibleRatio = board.clientWidth / board.scrollWidth;
+    thumbWidth = Math.max(46, Math.round(trackWidth * visibleRatio));
+    thumb.style.width = `${thumbWidth}px`;
+
+    maxScroll = Math.max(0, board.scrollWidth - board.clientWidth);
+    maxThumbLeft = Math.max(0, trackWidth - thumbWidth);
+    syncThumbFromBoard();
+  };
+
+  const queueUpdate = () => {
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(updateMetrics);
+  };
+
+  const resizeObs = new ResizeObserver(queueUpdate);
+  resizeObs.observe(board);
+  resizeObs.observe(track);
+
+  const mutObs = new MutationObserver(queueUpdate);
+  mutObs.observe(board, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+
+  window.addEventListener('resize', queueUpdate);
+  queueUpdate();
+
+  const onBoardScroll = () => syncThumbFromBoard();
+  board.addEventListener('scroll', onBoardScroll);
+
+  const onThumbPointerDown = e => {
+    if (!hscroll.classList.contains('show')) return;
+    dragging = true;
+    dragOffsetX = e.clientX - thumb.getBoundingClientRect().left;
+    thumb.classList.add('dragging');
+    thumb.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  };
+
+  const onThumbPointerMove = e => {
+    if (!dragging || maxThumbLeft <= 0) return;
+    e.preventDefault();
+    const trackRect = track.getBoundingClientRect();
+    const nextLeft = e.clientX - trackRect.left - dragOffsetX;
+    const clamped = Math.max(0, Math.min(maxThumbLeft, nextLeft));
+    const ratio = clamped / maxThumbLeft;
+    board.scrollLeft = ratio * maxScroll;
+  };
+
+  const onThumbPointerUp = () => {
+    dragging = false;
+    thumb.classList.remove('dragging');
+  };
+
+  const onTrackPointerDown = e => {
+    if (maxThumbLeft <= 0) return;
+    if (e.target === thumb) return;
+    const trackRect = track.getBoundingClientRect();
+    const desiredLeft = e.clientX - trackRect.left - thumbWidth / 2;
+    const clamped = Math.max(0, Math.min(maxThumbLeft, desiredLeft));
+    const ratio = clamped / maxThumbLeft;
+    board.scrollLeft = ratio * maxScroll;
+
+    dragging = true;
+    dragOffsetX = thumbWidth / 2;
+    thumb.classList.add('dragging');
+    track.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  };
+
+  thumb.addEventListener('pointerdown', onThumbPointerDown);
+  window.addEventListener('pointermove', onThumbPointerMove, { passive: false });
+  window.addEventListener('pointerup', onThumbPointerUp);
+  window.addEventListener('pointercancel', onThumbPointerUp);
+  track.addEventListener('pointerdown', onTrackPointerDown);
+
+  S.boardSync = {
+    cleanup: () => {
+      cancelAnimationFrame(rafId);
+      resizeObs.disconnect();
+      mutObs.disconnect();
+      window.removeEventListener('resize', queueUpdate);
+      board.removeEventListener('scroll', onBoardScroll);
+      thumb.removeEventListener('pointerdown', onThumbPointerDown);
+      window.removeEventListener('pointermove', onThumbPointerMove);
+      window.removeEventListener('pointerup', onThumbPointerUp);
+      window.removeEventListener('pointercancel', onThumbPointerUp);
+      track.removeEventListener('pointerdown', onTrackPointerDown);
+    },
+  };
 }
 
 // ════════════════════════════════════════════════════════════
@@ -945,6 +1056,7 @@ function extFromImg(img) {
 function show(screen) {
   $('landing').classList.toggle('hidden', screen !== 'landing');
   $('app').classList.toggle('hidden',     screen !== 'app');
+  $('mobile-upload-wrap')?.classList.toggle('hidden', screen !== 'app');
 }
 
 async function copyLink() {

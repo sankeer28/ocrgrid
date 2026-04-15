@@ -54,7 +54,11 @@
         <button id="btn-leave" class="btn-ghost">leave</button>
       </div>
     </div>
-    <div id="board-hscroll"><div id="board-hscroll-inner"></div></div>
+    <div id="board-hscroll" aria-label="Horizontal board scrollbar">
+      <div id="board-hscroll-track">
+        <div id="board-hscroll-thumb"></div>
+      </div>
+    </div>
   </header>
 
   <!-- Search -->
@@ -72,6 +76,11 @@
       <span class="add-col-plus">+</span>
       <span>Add Column</span>
     </button>
+  </div>
+
+  <div id="mobile-upload-wrap" class="hidden">
+    <button id="btn-search-mobile" class="btn-ghost">Search</button>
+    <button id="btn-upload-mobile" class="btn-accent">Upload Photo</button>
   </div>
 
   <!-- Column name prompt -->
