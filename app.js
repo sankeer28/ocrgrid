@@ -18,6 +18,7 @@ const S = {
   imgChannel:    null,
   colChannel:    null,
   boardSync:     null,
+  mobileOCRDisabled: false,
 };
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -469,7 +470,7 @@ async function processFile(file) {
 
   try {
     const imageData = await toBase64(file);
-    const ocrText   = await runOCR(file, imageData).catch(() => '');
+    const ocrText   = await getOCRTextSafe(file, imageData);
     URL.revokeObjectURL(preview);
 
     const { error } = await sb.from('images').insert({
@@ -490,6 +491,44 @@ async function processFile(file) {
     el?.remove();
     syncColCounts();
   }
+}
+
+async function getOCRTextSafe(file, imageData) {
+  if (isMobileClient()) {
+    if (S.mobileOCRDisabled) return '';
+    try {
+      // Mobile browsers can crash/freeze on OCR; fail open and keep upload working.
+      return await withTimeout(runOCR(file, imageData), 12000, 'mobile OCR timeout');
+    } catch (err) {
+      console.warn('[OCR][mobile] failed, skipping OCR for this upload', err);
+      S.mobileOCRDisabled = true;
+      return '';
+    }
+  }
+
+  return runOCR(file, imageData).catch(() => '');
+}
+
+function isMobileClient() {
+  const ua = navigator.userAgent || '';
+  const mobileUA = /android|iphone|ipad|ipod|mobile|silk|kindle|blackberry|opera mini|iemobile/i.test(ua);
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches;
+  return !!(mobileUA || coarsePointer);
+}
+
+function withTimeout(promise, ms, label = 'operation timeout') {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label)), ms);
+    promise
+      .then(value => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch(err => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
 }
 
 async function toBase64(file) {
