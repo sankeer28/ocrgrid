@@ -918,6 +918,7 @@ function showMatchNavigatorPopup(matchCount, questionPreview) {
 
   const nextBtn = popup.querySelector('.match-nav-next');
   const closeBtn = popup.querySelector('.match-nav-close');
+  if (matchCount <= 0) nextBtn?.setAttribute('disabled', 'true');
   nextBtn?.addEventListener('click', () => goToNextDuplicateQuestionMatch());
   closeBtn?.addEventListener('click', () => {
     clearDuplicateQuestionHighlights();
@@ -1057,21 +1058,22 @@ function imgCardHTML(row) {
 
 function buildAnswerSummaryHTML(row) {
   const text = row?.ocr_text || '';
-  const parsed = parseSelectedOption(text);
-  if (!parsed?.selectedText) return '';
-  const label = parsed.optionIndex > -1 ? String.fromCharCode(65 + parsed.optionIndex) : '?';
-  const answerHtml = `<div class="img-answer-pill"><span class="img-answer-k">selected</span><span class="img-answer-v">${esc(label)}. ${esc(parsed.selectedText)}</span></div>`;
+  if (!text) return '';
 
-  if (!S.showMatchButtons) return answerHtml;
+  const parsed = parseSelectedOption(text);
+  const hasSelected = !!parsed?.selectedText;
+  const label = hasSelected && parsed.optionIndex > -1 ? String.fromCharCode(65 + parsed.optionIndex) : '?';
+  const answerHtml = hasSelected
+    ? `<div class="img-answer-pill"><span class="img-answer-k">selected</span><span class="img-answer-v">${esc(label)}. ${esc(parsed.selectedText)}</span></div>`
+    : `<div class="img-answer-pill"><span class="img-answer-k">selected</span><span class="img-answer-v">not detected</span></div>`;
+
+  if (!S.showMatchButtons) return hasSelected ? answerHtml : '';
 
   const stem = extractQuestionStem(text);
   const stemKey = normalizeQuestionStem(stem);
   const matchCount = stemKey && row?.column_id && row?.id
     ? getSameQuestionMatchIdsInOtherColumns(stemKey, row.column_id, row.id).length
     : 0;
-
-  if (!matchCount) return answerHtml;
-
   return `<div class="img-answer-meta"><div class="img-answer-meta-left">${answerHtml}</div><div class="img-answer-meta-right"><button class="img-match-jump" type="button" title="Jump to same questions">view matches (${matchCount})</button></div></div>`;
 }
 
@@ -1080,10 +1082,14 @@ function jumpToSameQuestions(imageId) {
   if (!row || !row.ocr_text) return;
   const stem = extractQuestionStem(row.ocr_text);
   const stemKey = normalizeQuestionStem(stem);
-  if (!stemKey) return;
-  const matchCount = getSameQuestionMatchIdsInOtherColumns(stemKey, row.column_id, row.id).length;
-  if (!matchCount) return;
-  highlightDuplicateQuestionMatches(imageId, row.column_id, stemKey);
+  const matchCount = stemKey
+    ? getSameQuestionMatchIdsInOtherColumns(stemKey, row.column_id, row.id).length
+    : 0;
+  if (matchCount > 0 && stemKey) {
+    highlightDuplicateQuestionMatches(imageId, row.column_id, stemKey);
+  } else {
+    clearDuplicateQuestionHighlights();
+  }
   const previewWords = buildQuestionPreview(stem).split(/\s+/).slice(0, 8).join(' ');
   const compactPreview = previewWords ? `${previewWords}...` : 'this question';
   showMatchNavigatorPopup(matchCount, compactPreview);

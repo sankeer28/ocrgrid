@@ -708,6 +708,14 @@ header {
   background: rgba(56, 189, 248, .3);
 }
 
+.match-nav-next:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  background: rgba(148, 163, 184, .22);
+  border-color: rgba(148, 163, 184, .4);
+  color: rgba(226, 232, 240, .72);
+}
+
 .match-nav-close {
   background: rgba(248, 113, 113, .2);
   border-color: rgba(248, 113, 113, .65);
