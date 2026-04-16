@@ -26,6 +26,7 @@ const S = {
   duplicateHighlightIds: new Set(),
   duplicateNavIds: [],
   duplicateNavIndex: -1,
+  matchNavPopupEl: null,
 };
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -677,8 +678,9 @@ function updateImgCardOCR(imgId, ocrText) {
   if (!card) return;
   const ocrDiv = card.querySelector('.img-ocr');
   if (!ocrDiv) return;
+  const row = S.images.get(imgId);
   if (ocrText) {
-    ocrDiv.innerHTML = `<div class="img-ocr-text">${esc(ocrText)}</div>${buildAnswerSummaryHTML(ocrText)}`;
+    ocrDiv.innerHTML = `<div class="img-ocr-text">${esc(ocrText)}</div>${buildAnswerSummaryHTML(row || { id: imgId, ocr_text: ocrText })}`;
   } else {
     ocrDiv.innerHTML = '<span class="img-ocr-empty">no text found</span>';
   }
@@ -871,6 +873,35 @@ function clearDuplicateQuestionHighlights() {
   S.duplicateHighlightIds.clear();
   S.duplicateNavIds = [];
   S.duplicateNavIndex = -1;
+  removeMatchNavigatorPopup();
+}
+
+function showMatchNavigatorPopup(matchCount) {
+  removeMatchNavigatorPopup();
+
+  const popup = document.createElement('div');
+  popup.className = 'match-nav-popup';
+  popup.innerHTML = `
+    <span class="match-nav-label">${matchCount} match${matchCount === 1 ? '' : 'es'}</span>
+    <button class="match-nav-next" type="button" aria-label="Go to next match" title="Next match">→</button>
+    <button class="match-nav-close" type="button" aria-label="Close match navigator">✕</button>
+  `;
+
+  const nextBtn = popup.querySelector('.match-nav-next');
+  const closeBtn = popup.querySelector('.match-nav-close');
+  nextBtn?.addEventListener('click', () => goToNextDuplicateQuestionMatch());
+  closeBtn?.addEventListener('click', () => {
+    clearDuplicateQuestionHighlights();
+  });
+
+  document.body.appendChild(popup);
+  S.matchNavPopupEl = popup;
+}
+
+function removeMatchNavigatorPopup() {
+  if (!S.matchNavPopupEl) return;
+  S.matchNavPopupEl.remove();
+  S.matchNavPopupEl = null;
 }
 
 function showDuplicateQuestionToast(matchCount, questionPreview, containerSummary, onNextMatch) {
@@ -952,6 +983,13 @@ function bindImgCardEvents(card, row) {
   card.querySelector('.img-wrap').addEventListener('click', () => openLightbox(row.id));
   const delBtn = card.querySelector('.img-delete');
   if (delBtn) delBtn.addEventListener('click', e => { e.stopPropagation(); deleteImage(row.id); });
+  const matchBtn = card.querySelector('.img-match-jump');
+  if (matchBtn) {
+    matchBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      jumpToSameQuestions(row.id);
+    });
+  }
 }
 
 function imgCardHTML(row) {
@@ -975,15 +1013,38 @@ function imgCardHTML(row) {
     ocrEl = `<span class="img-ocr-empty">no text found</span>`;
   }
 
-  const answerEl = pending ? '' : buildAnswerSummaryHTML(row.ocr_text || '');
+  const answerEl = pending ? '' : buildAnswerSummaryHTML(row);
   return `${imgWrap}<div class="img-ocr">${ocrEl}${answerEl}</div>`;
 }
 
-function buildAnswerSummaryHTML(ocrText) {
-  const parsed = parseSelectedOption(ocrText);
+function buildAnswerSummaryHTML(row) {
+  const text = row?.ocr_text || '';
+  const parsed = parseSelectedOption(text);
   if (!parsed?.selectedText) return '';
   const label = parsed.optionIndex > -1 ? String.fromCharCode(65 + parsed.optionIndex) : '?';
-  return `<div class="img-answer-pill"><span class="img-answer-k">selected</span><span class="img-answer-v">${esc(label)}. ${esc(parsed.selectedText)}</span></div>`;
+  const answerHtml = `<div class="img-answer-pill"><span class="img-answer-k">selected</span><span class="img-answer-v">${esc(label)}. ${esc(parsed.selectedText)}</span></div>`;
+
+  const stem = extractQuestionStem(text);
+  const stemKey = normalizeQuestionStem(stem);
+  const matchCount = stemKey && row?.column_id && row?.id
+    ? getSameQuestionMatchIdsInOtherColumns(stemKey, row.column_id, row.id).length
+    : 0;
+
+  if (!matchCount) return answerHtml;
+
+  return `<div class="img-answer-meta"><div class="img-answer-meta-left">${answerHtml}</div><div class="img-answer-meta-right"><button class="img-match-jump" type="button" title="Jump to same questions">view matches (${matchCount})</button></div></div>`;
+}
+
+function jumpToSameQuestions(imageId) {
+  const row = S.images.get(imageId);
+  if (!row || !row.ocr_text) return;
+  const stem = extractQuestionStem(row.ocr_text);
+  const stemKey = normalizeQuestionStem(stem);
+  if (!stemKey) return;
+  const matchCount = getSameQuestionMatchIdsInOtherColumns(stemKey, row.column_id, row.id).length;
+  if (!matchCount) return;
+  highlightDuplicateQuestionMatches(imageId, row.column_id, stemKey);
+  showMatchNavigatorPopup(matchCount);
 }
 
 function parseSelectedOption(text) {
