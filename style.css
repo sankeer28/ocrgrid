@@ -255,6 +255,60 @@ header {
 
 .kbd-hint { font-size: 10px; color: var(--dim); letter-spacing: .5px; }
 
+.search-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.search-mode-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.search-mode-slider {
+  position: relative;
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--border2);
+  border: 1px solid var(--border2);
+  transition: background .16s ease, border-color .16s ease;
+}
+
+.search-mode-slider::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .16s ease;
+}
+
+.search-mode-toggle input:checked + .search-mode-slider {
+  background: rgba(245, 158, 11, .34);
+  border-color: rgba(245, 158, 11, .8);
+}
+
+.search-mode-toggle input:checked + .search-mode-slider::after {
+  transform: translateX(14px);
+}
+
+.search-mode-label {
+  font-size: 10px;
+  letter-spacing: .4px;
+  text-transform: lowercase;
+  color: var(--muted);
+}
+
 /* DB usage indicator */
 .db-usage {
   display: flex; align-items: center; gap: 6px; flex-shrink: 0;

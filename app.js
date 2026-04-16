@@ -10,6 +10,7 @@ const S = {
   activeColId:   null,
   query:         '',
   searchOpen:    false,
+  searchPreferExact: true,
   searchFocusId: null,
   searchHitIds:  [],
   searchHitIndex: -1,
@@ -41,12 +42,14 @@ const OCR_SCRIBE_OPTIONS = {
 };
 const OCR_ENABLE_ON_MOBILE = false;
 const THEME_KEY = 'ocrgrid_theme';
+const SEARCH_MODE_KEY = 'ocrgrid_search_mode';
 
 // ════════════════════════════════════════════════════════════
 // BOOT
 // ════════════════════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', async () => {
   initTheme();
+  initSearchMode();
   initOCR();
   bindEvents();
   try {
@@ -171,6 +174,11 @@ function bindEvents() {
   $('btn-leave-mobile')?.addEventListener('click', leaveRoom);
   $('btn-search-close').addEventListener('click', closeSearch);
   $('btn-search-next').addEventListener('click', goToNextSearchHit);
+  $('search-mode-toggle')?.addEventListener('change', e => {
+    S.searchPreferExact = !!e.target.checked;
+    localStorage.setItem(SEARCH_MODE_KEY, S.searchPreferExact ? 'exact' : 'regular');
+    if (S.searchOpen && S.query) applySearch();
+  });
   $('search-input').addEventListener('input', e => { S.query = e.target.value; applySearch(); });
   $('search-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') {
@@ -203,7 +211,16 @@ function bindEvents() {
 
   // Keyboard
   document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); if (S.roomCode) openSearch(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      // Smart mode ON: use in-app search. Smart mode OFF: fall back to native browser find.
+      if (S.searchPreferExact) {
+        e.preventDefault();
+        if (S.roomCode) openSearch();
+      } else if (S.searchOpen) {
+        closeSearch();
+      }
+      return;
+    }
     if (e.key === 'Escape') {
       if (!$('lightbox').classList.contains('hidden')) { closeLightbox(); return; }
       if (S.searchOpen) closeSearch();
@@ -215,6 +232,13 @@ function initTheme() {
   const saved = localStorage.getItem(THEME_KEY);
   const theme = saved || 'dark';
   applyTheme(theme);
+}
+
+function initSearchMode() {
+  const raw = localStorage.getItem(SEARCH_MODE_KEY);
+  S.searchPreferExact = raw !== 'regular';
+  const toggle = $('search-mode-toggle');
+  if (toggle) toggle.checked = S.searchPreferExact;
 }
 
 function applyTheme(theme) {
@@ -1061,9 +1085,13 @@ function applySearch() {
     }
   });
 
-  // If any exact phrase match exists, suppress fuzzy-only alternatives.
-  const hasExact = candidates.some(c => c.match.exact);
-  hits = hasExact ? candidates.filter(c => c.match.exact) : candidates;
+  // In smart exact mode, if any exact phrase match exists, suppress fuzzy-only alternatives.
+  if (S.searchPreferExact) {
+    const hasExact = candidates.some(c => c.match.exact);
+    hits = hasExact ? candidates.filter(c => c.match.exact) : candidates;
+  } else {
+    hits = candidates;
+  }
 
   document.querySelectorAll('.img-card').forEach(card => {
     const row = S.images.get(card.dataset.id);
