@@ -426,10 +426,21 @@ header {
 
 /* Column drop target hint */
 .col-drop-hint {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
   text-align: center; padding: 10px 12px; border-top: 1px solid var(--border);
   font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
   color: var(--dim); cursor: pointer; flex-shrink: 0;
   transition: color .15s;
+}
+.col-focus-badge--footer {
+  opacity: .35;
+  border-color: currentColor;
+  color: inherit;
+  background: transparent;
+}
+.col-drop-hint:hover .col-focus-badge--footer,
+.col.active .col-drop-hint .col-focus-badge--footer {
+  opacity: .65;
 }
 .col.active .col-drop-hint { color: var(--accent); }
 

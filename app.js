@@ -23,6 +23,7 @@ const S = {
   colChannel:    null,
   boardSync:     null,
   mobileOCRDisabled: false,
+  matchAlertsEnabled: false,
   duplicateToastSeen: new Set(),
   duplicateHighlightIds: new Set(),
   duplicateNavIds: [],
@@ -45,7 +46,8 @@ const OCR_SCRIBE_OPTIONS = {
 const OCR_ENABLE_ON_MOBILE = false;
 const THEME_KEY = 'ocrgrid_theme';
 const SEARCH_MODE_KEY = 'ocrgrid_search_mode';
-const VIEW_MATCHES_KEY = 'ocrgrid_view_matches';
+const VIEW_MATCHES_KEY   = 'ocrgrid_view_matches';
+const MATCH_ALERTS_KEY   = 'ocrgrid_match_alerts';
 
 // ════════════════════════════════════════════════════════════
 // BOOT
@@ -54,6 +56,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   initSearchMode();
   initViewMatchesToggle();
+  initMatchAlertsToggle();
   initOCR();
   bindEvents();
   try {
@@ -188,6 +191,10 @@ function bindEvents() {
     localStorage.setItem(VIEW_MATCHES_KEY, S.showMatchButtons ? 'on' : 'off');
     rerenderVisibleImageCards();
   });
+  $('match-alerts-toggle')?.addEventListener('change', e => {
+    S.matchAlertsEnabled = !!e.target.checked;
+    localStorage.setItem(MATCH_ALERTS_KEY, S.matchAlertsEnabled ? 'on' : 'off');
+  });
   $('search-input').addEventListener('input', e => { S.query = e.target.value; applySearch(); });
   $('search-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') {
@@ -255,6 +262,13 @@ function initViewMatchesToggle() {
   S.showMatchButtons = raw === 'on';
   const toggle = $('view-matches-toggle');
   if (toggle) toggle.checked = S.showMatchButtons;
+}
+
+function initMatchAlertsToggle() {
+  const raw = localStorage.getItem(MATCH_ALERTS_KEY);
+  S.matchAlertsEnabled = raw === 'on';
+  const toggle = $('match-alerts-toggle');
+  if (toggle) toggle.checked = S.matchAlertsEnabled;
 }
 
 function rerenderVisibleImageCards() {
@@ -343,7 +357,7 @@ async function joinRoom(code) {
           S.images.set(row.id, row);
           appendImgCard(row);
         }
-        notifyDuplicateQuestionIfNeeded(row.id, row.column_id, row.ocr_text);
+        if (row.uploader_id === S.ip) notifyDuplicateQuestionIfNeeded(row.id, row.column_id, row.ocr_text);
         syncColCounts();
         if (S.searchOpen) applySearch();
       })
@@ -355,7 +369,7 @@ async function joinRoom(code) {
         // If OCR text just arrived from another client, update the card
         if (row.ocr_text && row.ocr_text !== prev.ocr_text) {
           updateImgCardOCR(row.id, row.ocr_text);
-          notifyDuplicateQuestionIfNeeded(row.id, row.column_id, row.ocr_text);
+          if (row.uploader_id === S.ip) notifyDuplicateQuestionIfNeeded(row.id, row.column_id, row.ocr_text);
           if (S.searchOpen) applySearch();
         }
       })
@@ -464,12 +478,13 @@ function renderColumn(col) {
     <div class="col-images">
       <div class="col-empty">Click to select,<br>then paste (Ctrl+V)</div>
     </div>
-    <div class="col-drop-hint">↑ paste here (Ctrl+V)</div>`;
+    <div class="col-drop-hint">↑ paste here (Ctrl+V)<span class="col-focus-badge col-focus-badge--footer">click to select</span></div>`;
 
   initColResize(el);
 
-  // Click header → activate column
+  // Click header or drop hint → activate column
   el.querySelector('.col-header').addEventListener('click', () => setActiveCol(col.id));
+  el.querySelector('.col-drop-hint').addEventListener('click', () => setActiveCol(col.id));
 
   // Double-click name → inline rename
   el.querySelector('.col-name').addEventListener('dblclick', e => {
@@ -712,6 +727,7 @@ function updateImgCardOCR(imgId, ocrText) {
 }
 
 function notifyDuplicateQuestionIfNeeded(imageId, columnId, ocrText) {
+  if (!S.matchAlertsEnabled) return;
   if (!imageId || !columnId || !ocrText) return;
 
   const stem = extractQuestionStem(ocrText);
