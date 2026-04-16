@@ -11,6 +11,7 @@ const S = {
   query:         '',
   searchOpen:    false,
   searchPreferExact: true,
+  showMatchButtons: false,
   searchFocusId: null,
   searchHitIds:  [],
   searchHitIndex: -1,
@@ -44,6 +45,7 @@ const OCR_SCRIBE_OPTIONS = {
 const OCR_ENABLE_ON_MOBILE = false;
 const THEME_KEY = 'ocrgrid_theme';
 const SEARCH_MODE_KEY = 'ocrgrid_search_mode';
+const VIEW_MATCHES_KEY = 'ocrgrid_view_matches';
 
 // ════════════════════════════════════════════════════════════
 // BOOT
@@ -51,6 +53,7 @@ const SEARCH_MODE_KEY = 'ocrgrid_search_mode';
 window.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   initSearchMode();
+  initViewMatchesToggle();
   initOCR();
   bindEvents();
   try {
@@ -180,6 +183,11 @@ function bindEvents() {
     localStorage.setItem(SEARCH_MODE_KEY, S.searchPreferExact ? 'exact' : 'regular');
     if (S.searchOpen && S.query) applySearch();
   });
+  $('view-matches-toggle')?.addEventListener('change', e => {
+    S.showMatchButtons = !!e.target.checked;
+    localStorage.setItem(VIEW_MATCHES_KEY, S.showMatchButtons ? 'on' : 'off');
+    rerenderVisibleImageCards();
+  });
   $('search-input').addEventListener('input', e => { S.query = e.target.value; applySearch(); });
   $('search-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') {
@@ -240,6 +248,23 @@ function initSearchMode() {
   S.searchPreferExact = raw !== 'regular';
   const toggle = $('search-mode-toggle');
   if (toggle) toggle.checked = S.searchPreferExact;
+}
+
+function initViewMatchesToggle() {
+  const raw = localStorage.getItem(VIEW_MATCHES_KEY);
+  S.showMatchButtons = raw === 'on';
+  const toggle = $('view-matches-toggle');
+  if (toggle) toggle.checked = S.showMatchButtons;
+}
+
+function rerenderVisibleImageCards() {
+  document.querySelectorAll('.img-card').forEach(card => {
+    const row = S.images.get(card.dataset.id);
+    if (!row) return;
+    card.innerHTML = imgCardHTML(row);
+    bindImgCardEvents(card, row);
+  });
+  if (S.searchOpen && S.query) applySearch();
 }
 
 function applyTheme(theme) {
@@ -846,6 +871,7 @@ function goToNextDuplicateQuestionMatch() {
   if (!S.duplicateNavIds.length) return;
 
   S.duplicateNavIndex = (S.duplicateNavIndex + 1) % S.duplicateNavIds.length;
+  updateMatchNavigatorPosition();
   const nextId = S.duplicateNavIds[S.duplicateNavIndex];
   if (!nextId) return;
 
@@ -876,13 +902,16 @@ function clearDuplicateQuestionHighlights() {
   removeMatchNavigatorPopup();
 }
 
-function showMatchNavigatorPopup(matchCount) {
+function showMatchNavigatorPopup(matchCount, questionPreview) {
   removeMatchNavigatorPopup();
+
+  const preview = (questionPreview || '').trim() || 'this question';
 
   const popup = document.createElement('div');
   popup.className = 'match-nav-popup';
   popup.innerHTML = `
-    <span class="match-nav-label">${matchCount} match${matchCount === 1 ? '' : 'es'}</span>
+    <span class="match-nav-label">${matchCount} match${matchCount === 1 ? '' : 'es'} for "${esc(preview)}"</span>
+    <span class="match-nav-position">0/${matchCount}</span>
     <button class="match-nav-next" type="button" aria-label="Go to next match" title="Next match">→</button>
     <button class="match-nav-close" type="button" aria-label="Close match navigator">✕</button>
   `;
@@ -896,6 +925,15 @@ function showMatchNavigatorPopup(matchCount) {
 
   document.body.appendChild(popup);
   S.matchNavPopupEl = popup;
+}
+
+function updateMatchNavigatorPosition() {
+  if (!S.matchNavPopupEl) return;
+  const total = S.duplicateNavIds.length;
+  if (!total) return;
+  const current = S.duplicateNavIndex >= 0 ? S.duplicateNavIndex + 1 : 0;
+  const label = S.matchNavPopupEl.querySelector('.match-nav-position');
+  if (label) label.textContent = `${current}/${total}`;
 }
 
 function removeMatchNavigatorPopup() {
@@ -1024,6 +1062,8 @@ function buildAnswerSummaryHTML(row) {
   const label = parsed.optionIndex > -1 ? String.fromCharCode(65 + parsed.optionIndex) : '?';
   const answerHtml = `<div class="img-answer-pill"><span class="img-answer-k">selected</span><span class="img-answer-v">${esc(label)}. ${esc(parsed.selectedText)}</span></div>`;
 
+  if (!S.showMatchButtons) return answerHtml;
+
   const stem = extractQuestionStem(text);
   const stemKey = normalizeQuestionStem(stem);
   const matchCount = stemKey && row?.column_id && row?.id
@@ -1044,7 +1084,9 @@ function jumpToSameQuestions(imageId) {
   const matchCount = getSameQuestionMatchIdsInOtherColumns(stemKey, row.column_id, row.id).length;
   if (!matchCount) return;
   highlightDuplicateQuestionMatches(imageId, row.column_id, stemKey);
-  showMatchNavigatorPopup(matchCount);
+  const previewWords = buildQuestionPreview(stem).split(/\s+/).slice(0, 8).join(' ');
+  const compactPreview = previewWords ? `${previewWords}...` : 'this question';
+  showMatchNavigatorPopup(matchCount, compactPreview);
 }
 
 function parseSelectedOption(text) {
