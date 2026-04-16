@@ -11,6 +11,8 @@ const S = {
   query:         '',
   searchOpen:    false,
   searchFocusId: null,
+  searchHitIds:  [],
+  searchHitIndex: -1,
   ocrEngine:     null,
   scribe:        null,
   ocrWorker:     null,
@@ -19,6 +21,10 @@ const S = {
   colChannel:    null,
   boardSync:     null,
   mobileOCRDisabled: false,
+  duplicateToastSeen: new Set(),
+  duplicateHighlightIds: new Set(),
+  duplicateNavIds: [],
+  duplicateNavIndex: -1,
 };
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -164,7 +170,14 @@ function bindEvents() {
   $('btn-leave').addEventListener('click', leaveRoom);
   $('btn-leave-mobile')?.addEventListener('click', leaveRoom);
   $('btn-search-close').addEventListener('click', closeSearch);
+  $('btn-search-next').addEventListener('click', goToNextSearchHit);
   $('search-input').addEventListener('input', e => { S.query = e.target.value; applySearch(); });
+  $('search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      goToNextSearchHit();
+    }
+  });
 
   // Add column
   $('btn-add-col').addEventListener('click', openColPrompt);
@@ -280,6 +293,7 @@ async function joinRoom(code) {
           S.images.set(row.id, row);
           appendImgCard(row);
         }
+        notifyDuplicateQuestionIfNeeded(row.id, row.column_id, row.ocr_text);
         syncColCounts();
         if (S.searchOpen) applySearch();
       })
@@ -291,6 +305,7 @@ async function joinRoom(code) {
         // If OCR text just arrived from another client, update the card
         if (row.ocr_text && row.ocr_text !== prev.ocr_text) {
           updateImgCardOCR(row.id, row.ocr_text);
+          notifyDuplicateQuestionIfNeeded(row.id, row.column_id, row.ocr_text);
           if (S.searchOpen) applySearch();
         }
       })
@@ -334,6 +349,8 @@ function leaveRoom() {
   S.imgChannel = S.colChannel = null;
   S.roomCode = S.activeColId = null;
   S.columns.clear(); S.images.clear();
+  S.duplicateToastSeen.clear();
+  clearDuplicateQuestionHighlights();
 
   // Remove all columns from DOM
   document.querySelectorAll('.col').forEach(c => c.remove());
@@ -485,6 +502,7 @@ async function processFile(file) {
   try {
     const imageData = await toBase64(file);
     const ocrText   = await getOCRTextSafe(file, imageData);
+    notifyDuplicateQuestionIfNeeded(id, colId, ocrText);
     URL.revokeObjectURL(preview);
 
     const { error } = await sb.from('images').insert({
@@ -636,10 +654,237 @@ function updateImgCardOCR(imgId, ocrText) {
   const ocrDiv = card.querySelector('.img-ocr');
   if (!ocrDiv) return;
   if (ocrText) {
-    ocrDiv.innerHTML = `<div class="img-ocr-text">${esc(ocrText)}</div>`;
+    ocrDiv.innerHTML = `<div class="img-ocr-text">${esc(ocrText)}</div>${buildAnswerSummaryHTML(ocrText)}`;
   } else {
     ocrDiv.innerHTML = '<span class="img-ocr-empty">no text found</span>';
   }
+}
+
+function notifyDuplicateQuestionIfNeeded(imageId, columnId, ocrText) {
+  if (!imageId || !columnId || !ocrText) return;
+
+  const stem = extractQuestionStem(ocrText);
+  if (!stem) return;
+
+  const stemKey = normalizeQuestionStem(stem);
+  if (!stemKey) return;
+
+  const matchIds = getSameQuestionMatchIdsInOtherColumns(stemKey, columnId, imageId);
+  const matchCount = matchIds.length;
+  if (matchCount <= 0) return;
+
+  const dedupeKey = `${imageId}:${stemKey}`;
+  if (S.duplicateToastSeen.has(dedupeKey)) return;
+  S.duplicateToastSeen.add(dedupeKey);
+
+  highlightDuplicateQuestionMatches(imageId, columnId, stemKey);
+
+  const questionPreview = buildQuestionPreview(stem);
+  const containerSummary = buildContainerNamesSummary(matchIds);
+
+  showDuplicateQuestionToast(matchCount, questionPreview, containerSummary, () => {
+    goToNextDuplicateQuestionMatch();
+  });
+}
+
+function buildQuestionPreview(stem) {
+  const cleaned = (stem || '')
+    .replace(/\bquestion\s*\d+\b/ig, ' ')
+    .replace(/\(\s*\d+\s*point[s]?\s*\)/ig, ' ')
+    .replace(/\bsaved\b/ig, ' ')
+    .replace(/\bnot\s+saved\b/ig, ' ')
+    .replace(/[^\w\s?']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return 'this question';
+  const words = cleaned.split(' ').filter(Boolean);
+  const head = words.slice(0, 24).join(' ');
+  return words.length > 24 ? `${head}...` : head;
+}
+
+function buildContainerNamesSummary(matchIds) {
+  if (!Array.isArray(matchIds) || !matchIds.length) return '';
+
+  const names = [];
+  const seen = new Set();
+
+  for (const id of matchIds) {
+    const row = S.images.get(id);
+    const colName = row?.column_id ? S.columns.get(row.column_id)?.name : null;
+    const cleaned = (colName || '').trim();
+    if (!cleaned || seen.has(cleaned)) continue;
+    seen.add(cleaned);
+    names.push(cleaned);
+  }
+
+  if (!names.length) return '';
+  if (names.length <= 3) return names.join(', ');
+  return `${names.slice(0, 3).join(', ')} +${names.length - 3} more`;
+}
+
+function extractQuestionStem(text) {
+  if (!text) return '';
+
+  const flattened = text
+    .replace(/\r/g, '\n')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!flattened) return '';
+
+  const questionEnd = flattened.indexOf('?');
+  if (questionEnd !== -1) {
+    return flattened.slice(0, questionEnd + 1).trim();
+  }
+
+  const optionMarker = flattened.match(/\s(?:[@●◉○◯]|\([oO0eE]\)|\([a-dA-D]\)|[A-D][\).]|[a-d][\).])\s+/);
+  const head = optionMarker?.index ? flattened.slice(0, optionMarker.index).trim() : flattened;
+
+  return head
+    .replace(/^\d+\s*[.)-]\s*/, '')
+    .replace(/[:;,.\-\s]+$/, '')
+    .trim();
+}
+
+function normalizeQuestionStem(stem) {
+  const raw = (stem || '').toLowerCase();
+  if (!raw) return '';
+
+  const cleaned = raw
+    // Remove common quiz metadata that should not affect duplicate matching.
+    .replace(/\bquestion\s*\d+\b/g, ' ')
+    .replace(/\(\s*\d+\s*point[s]?\s*\)/g, ' ')
+    .replace(/\bpoint[s]?\b/g, ' ')
+    .replace(/\bsaved\b/g, ' ')
+    .replace(/\bnot\s+saved\b/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b\d+\b/g, ' ')
+    .replace(/\b[a-z]\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned;
+}
+
+function isSameQuestionStem(baseStemKey, candidateStemKey) {
+  if (!baseStemKey || !candidateStemKey) return false;
+  if (baseStemKey === candidateStemKey) return true;
+
+  // Accept tiny OCR differences while still requiring near-identical stems.
+  const minLen = Math.min(baseStemKey.length, candidateStemKey.length);
+  if (minLen < 18) return false;
+  return similarityByEditDistance(baseStemKey, candidateStemKey) >= 0.94;
+}
+
+function countSameQuestionInOtherColumns(stemKey, currentColumnId, currentImageId) {
+  return getSameQuestionMatchIdsInOtherColumns(stemKey, currentColumnId, currentImageId).length;
+}
+
+function getSameQuestionMatchIdsInOtherColumns(stemKey, currentColumnId, currentImageId) {
+  const ids = [];
+
+  for (const row of S.images.values()) {
+    if (!row || row._pending || !row.ocr_text) continue;
+    if (row.id === currentImageId) continue;
+    if (!row.column_id || row.column_id === currentColumnId) continue;
+
+    const otherStem = extractQuestionStem(row.ocr_text);
+    if (!otherStem) continue;
+    const otherStemKey = normalizeQuestionStem(otherStem);
+    if (isSameQuestionStem(stemKey, otherStemKey)) ids.push(row.id);
+  }
+
+  return ids;
+}
+
+function highlightDuplicateQuestionMatches(sourceImageId, sourceColumnId, stemKey) {
+  clearDuplicateQuestionHighlights();
+
+  const matchIds = getSameQuestionMatchIdsInOtherColumns(stemKey, sourceColumnId, sourceImageId);
+  if (!matchIds.length) return;
+
+  S.duplicateNavIds = matchIds;
+  S.duplicateNavIndex = -1;
+
+  for (const id of matchIds) {
+    const card = document.querySelector(`.img-card[data-id="${id}"]`);
+    if (!card) continue;
+    card.classList.add('dup-question-hit');
+    S.duplicateHighlightIds.add(id);
+  }
+}
+
+function goToNextDuplicateQuestionMatch() {
+  if (!S.duplicateNavIds.length) return;
+
+  S.duplicateNavIndex = (S.duplicateNavIndex + 1) % S.duplicateNavIds.length;
+  const nextId = S.duplicateNavIds[S.duplicateNavIndex];
+  if (!nextId) return;
+
+  document.querySelectorAll('.img-card.dup-question-focus').forEach(el => el.classList.remove('dup-question-focus'));
+
+  const nextCard = document.querySelector(`.img-card[data-id="${nextId}"]`);
+  if (!nextCard) return;
+  nextCard.classList.add('dup-question-focus');
+
+  const col = nextCard.closest('.col');
+  if (col) {
+    setActiveCol(col.dataset.colId);
+    col.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }
+  nextCard.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+}
+
+function clearDuplicateQuestionHighlights() {
+  if (!S.duplicateHighlightIds.size && !S.duplicateNavIds.length) return;
+  for (const id of S.duplicateHighlightIds) {
+    const card = document.querySelector(`.img-card[data-id="${id}"]`);
+    card?.classList.remove('dup-question-hit');
+    card?.classList.remove('dup-question-focus');
+  }
+  S.duplicateHighlightIds.clear();
+  S.duplicateNavIds = [];
+  S.duplicateNavIndex = -1;
+}
+
+function showDuplicateQuestionToast(matchCount, questionPreview, containerSummary, onNextMatch) {
+  const stack = $('toast-stack');
+  if (!stack) return;
+
+  const matchText = containerSummary
+    ? `In: ${esc(containerSummary)}`
+    : `${matchCount} match${matchCount === 1 ? '' : 'es'} in other container${matchCount === 1 ? '' : 's'}`;
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `
+    <div class="toast-row">
+      <span class="toast-question-preview">Question: ${esc(questionPreview || 'this question')}</span>
+      <span class="toast-body">${matchText}</span>
+      <div class="toast-actions toast-actions-right">
+      <button class="toast-action toast-action-next" type="button">Next match</button>
+        <button class="toast-close" type="button" aria-label="Close notification">✕</button>
+      </div>
+    </div>
+  `;
+
+  stack.appendChild(toast);
+
+  let removed = false;
+  const removeToast = () => {
+    if (removed) return;
+    removed = true;
+    clearDuplicateQuestionHighlights();
+    toast.classList.add('out');
+    setTimeout(() => toast.remove(), 180);
+  };
+
+  toast.querySelector('.toast-close')?.addEventListener('click', removeToast);
+  toast.querySelector('.toast-action-next')?.addEventListener('click', () => {
+    onNextMatch?.();
+  });
 }
 
 function flashNoCol() {
@@ -787,6 +1032,8 @@ function openSearch() {
 function closeSearch() {
   S.searchOpen = false; S.query = '';
   S.searchFocusId = null;
+  S.searchHitIds = [];
+  S.searchHitIndex = -1;
   $('search-bar').classList.remove('open');
   $('search-input').value = '';
   $('search-count').textContent = '';
@@ -829,9 +1076,16 @@ function applySearch() {
     return b.match.score - a.match.score;
   });
 
+  S.searchHitIds = hits.map(h => h.card.dataset.id);
+  const currentIdx = S.searchHitIds.indexOf(S.searchFocusId);
+  S.searchHitIndex = currentIdx >= 0 ? currentIdx : (S.searchHitIds.length ? 0 : -1);
+
   const lead = hits[0]?.card || null;
-  setActiveSearchHit(lead);
-  if (lead) scrollToSearchHit(lead);
+  const activeCard = S.searchHitIndex >= 0
+    ? document.querySelector(`.img-card[data-id="${S.searchHitIds[S.searchHitIndex]}"]`)
+    : lead;
+  setActiveSearchHit(activeCard);
+  if (activeCard) scrollToSearchHit(activeCard);
 
   // Dim columns with no hits
   document.querySelectorAll('.col').forEach(col => {
@@ -839,6 +1093,8 @@ function applySearch() {
   });
 
   if (hits.length === 0) {
+    S.searchHitIds = [];
+    S.searchHitIndex = -1;
     $('search-count').textContent = 'no matches';
     return;
   }
@@ -878,12 +1134,30 @@ function restoreOCREl(card, row) {
 }
 
 function clearSearchStates() {
+  S.searchHitIds = [];
+  S.searchHitIndex = -1;
   document.querySelectorAll('.img-card').forEach(card => {
     card.classList.remove('search-hit', 'search-miss', 'search-hit-active');
     const row = S.images.get(card.dataset.id);
     if (row) restoreOCREl(card, row);
   });
   document.querySelectorAll('.col').forEach(col => col.classList.remove('col-search-miss'));
+}
+
+function goToNextSearchHit() {
+  if (!S.query) return;
+  if (!S.searchHitIds.length) {
+    applySearch();
+    if (!S.searchHitIds.length) return;
+  }
+
+  S.searchHitIndex = (S.searchHitIndex + 1) % S.searchHitIds.length;
+  const nextId = S.searchHitIds[S.searchHitIndex];
+  const card = document.querySelector(`.img-card[data-id="${nextId}"]`);
+  if (!card) return;
+
+  setActiveSearchHit(card);
+  scrollToSearchHit(card);
 }
 
 function applyFuzzySearchToCard(card, row, match) {
