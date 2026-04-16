@@ -1043,9 +1043,10 @@ function closeSearch() {
 function applySearch() {
   if (!S.query) { clearSearchStates(); $('search-count').textContent = ''; return; }
   const q = S.query;
-  const hits = [];
+  let hits = [];
   let fuzzyCount = 0;
   const colHits = new Set();
+  const candidates = [];
 
   document.querySelectorAll('.img-card').forEach(card => {
     const row = S.images.get(card.dataset.id);
@@ -1055,20 +1056,33 @@ function applySearch() {
     }
 
     const match = evaluateSearchMatch(q, row.ocr_text || '');
-    if (!match || match.score < 0.66) {
+    if (match && match.score >= 0.66) {
+      candidates.push({ card, row, match });
+    }
+  });
+
+  // If any exact phrase match exists, suppress fuzzy-only alternatives.
+  const hasExact = candidates.some(c => c.match.exact);
+  hits = hasExact ? candidates.filter(c => c.match.exact) : candidates;
+
+  document.querySelectorAll('.img-card').forEach(card => {
+    const row = S.images.get(card.dataset.id);
+    if (!row || row._pending) return;
+
+    const hit = hits.find(h => h.card.dataset.id === card.dataset.id);
+    if (!hit) {
       card.classList.remove('search-hit', 'search-hit-active');
       card.classList.add('search-miss');
       restoreOCREl(card, row);
       return;
     }
 
-    if (!match.exact) fuzzyCount++;
-    hits.push({ card, match });
+    if (!hit.match.exact) fuzzyCount++;
     colHits.add(card.dataset.colId);
     card.classList.add('search-hit');
     card.classList.remove('search-miss');
-    if (match.exact) applySearchToCard(card, row, match);
-    else applyFuzzySearchToCard(card, row, match);
+    if (hit.match.exact) applySearchToCard(card, row, hit.match);
+    else applyFuzzySearchToCard(card, row, hit.match);
   });
 
   hits.sort((a, b) => {

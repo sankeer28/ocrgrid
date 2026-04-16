@@ -281,12 +281,12 @@ header {
 /* ── Search bar ──────────────────────────────────────────── */
 #search-bar {
   height: 0; overflow: hidden; background: var(--surf2);
-  border-bottom: 1px solid transparent;
+  border-bottom: 0;
   display: flex; align-items: center; padding: 0 16px; gap: 10px;
-  transition: height .2s ease, border-color .2s; flex-shrink: 0;
+  transition: height .2s ease, border-bottom-color .2s; flex-shrink: 0;
   position: sticky; top: calc(var(--hdr) + var(--hscroll)); z-index: 19;
 }
-#search-bar.open { height: var(--srch); border-bottom-color: var(--border); }
+#search-bar.open { height: var(--srch); border-bottom: 1px solid var(--border); }
 
 .search-icon { font-size: 15px; color: var(--muted); font-weight: 400; flex-shrink: 0; font-family: 'JetBrains Mono', monospace; }
 #search-input { flex: 1; border: none; background: transparent; padding: 0; font-size: 13px; }
